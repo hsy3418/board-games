@@ -740,10 +740,7 @@ $('bLang').onclick = () => { LANG = LANG === 'zh' ? 'en' : 'zh'; localStorage.se
 window.addEventListener('hashchange', load);
 applyLang();
 load();
-/* no double-tap zoom */
-let __lastTouch = 0;
-document.addEventListener('touchend', e => { const now = Date.now(); if (now - __lastTouch < 350 && !e.target.closest('input,textarea')) e.preventDefault(); __lastTouch = now; }, {passive:false});
-document.addEventListener('dblclick', e => e.preventDefault(), {passive:false});
+/* no double-tap zoom: handled by touch-action:manipulation + viewport (board taps use click, so no touchend blocking here) */
 </script>
 </body>
 </html>

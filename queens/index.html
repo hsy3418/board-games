@@ -310,7 +310,7 @@ document.addEventListener('visibilitychange', () => { if (cur < 0 || wonShown) r
 })();
 /* no double-tap zoom */
 let __lastTouch = 0;
-document.addEventListener('touchend', e => { const now = Date.now(); if (now - __lastTouch < 350 && !e.target.closest('input,textarea')) e.preventDefault(); __lastTouch = now; }, {passive:false});
+$('grid').addEventListener('touchend', e => { const now = Date.now(); if (now - __lastTouch < 400) e.preventDefault(); __lastTouch = now; }, {passive:false});
 document.addEventListener('dblclick', e => e.preventDefault(), {passive:false});
 </script>
 </body>
