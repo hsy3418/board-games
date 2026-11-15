@@ -96,6 +96,7 @@ input{width:100%;font:inherit;padding:12px;border-radius:12px;border:2px solid #
   <div class="hand" id="hand"></div>
   <div class="picks hidden" id="picks"></div>
   <div class="rollrow" id="rollrow"><button class="roll" id="bRoll"></button></div>
+  <p class="muted" style="text-align:center;margin:10px 0 0"><button class="link" id="bSwap"></button> · <button class="link" id="bMine"></button></p>
   <div class="row hidden" id="endRow"><button class="on" id="bRematch" data-t="rematch"></button></div>
   <div class="card hidden" id="invite">
     <b data-t="invTitle"></b>
@@ -208,7 +209,7 @@ const T = {
   roll:'🎲 掷骰子', notYour:n=>`等 ${n}…`, youTurn:'轮到你了！可以先出一张卡，再掷骰子', you:'你', here:'在线', away:'不在',
   cards:n=>`手牌 ${n}`, shielded:'🛡️', home:n=>`到家 ${n}/2`, won:n=>`🏆 ${n} 两只都到家了，赢了！`, waitingFor:n=>`等 ${n} 行动`,
   pickHint:'选一只来走（蓝圈是落点）', remoteHint:'遥控骰子：你想走几步？', placeHint:c=>`点一个蓝色格子放 ${c}（再点一次卡片取消）`, noCards:'没有手牌，踩到 🎁 可以抽',
-  piece:(ic,i)=>`${ic}${'①②'[i]}`, cant:'走不了', toHome:'🏁 到家',
+  piece:(ic,i)=>`${ic}${'①②'[i]}`, cant:'走不了', toHome:'🏁 到家', swapSide:n=>`身份不对？我其实是 ${n}`, myLink:'📋 复制我自己的链接', swapped:n=>`好的，现在你是 ${n}`, myCopied:'已复制你自己的链接，换手机或换浏览器时用它打开',
   card:{banana:['🍌','香蕉皮','放在对方前面，谁踩到谁退 3 格'], wall:['🧱','路障','放在对方前面，谁走到这里都得停下'], remote:['🎯','遥控骰子','这次不掷，自己选 1 到 6'], boost:['💨','加速','这次骰子 +2'], shield:['🛡️','护盾','被动：挡掉下一次倒霉事（包括被撞）']},
   sq:{carrot:'🥕 再来一回合', hole:'🕳️ 掉坑，退 3 格', gift:'🎁 抽一张卡', rocket:'🚀 向前冲 3 格'},
   ev:{rolled:(n,d,b)=>`${n} 掷出 ${DICE[d-1]}${b ? ' +2' : ''}`, remote:(n,d)=>`${n} 用遥控骰子选了 ${d}`, played:(n,c)=>`${n} 出了 ${c}`, placed:(c,sq)=>`${c} 放在了第 ${sq} 格`,
@@ -225,7 +226,7 @@ const T = {
   roll:'🎲 Roll', notYour:n=>`Waiting for ${n}…`, youTurn:'Your turn! Play a card if you like, then roll', you:'you', here:'here', away:'away',
   cards:n=>`${n} card${n===1?'':'s'}`, shielded:'🛡️', home:n=>`home ${n}/2`, won:n=>`🏆 ${n} got both home and wins!`, waitingFor:n=>`Waiting for ${n}`,
   pickHint:'Pick which one moves (blue rings show where they land)', remoteHint:'Remote dice: how far do you want to go?', placeHint:c=>`Tap a blue square to place ${c} (tap the card again to cancel)`, noCards:'No cards. Land on 🎁 to draw',
-  piece:(ic,i)=>`${ic}${'①②'[i]}`, cant:"can't move", toHome:'🏁 home',
+  piece:(ic,i)=>`${ic}${'①②'[i]}`, cant:"can't move", toHome:'🏁 home', swapSide:n=>`Wrong side? I'm actually ${n}`, myLink:'📋 Copy my own link', swapped:n=>`OK, you are now ${n}`, myCopied:'Copied your own link. Use it to open the game on another phone or browser',
   card:{banana:['🍌','Banana','Place ahead of them. Whoever lands on it goes back 3'], wall:['🧱','Roadblock','Place ahead of them. Anyone reaching it must stop'], remote:['🎯','Remote dice','No roll: choose 1 to 6'], boost:['💨','Boost','+2 on this roll'], shield:['🛡️','Shield','Passive: cancels your next bad luck, even a bump']},
   sq:{carrot:'🥕 Another turn', hole:'🕳️ Hole, back 3', gift:'🎁 Draw a card', rocket:'🚀 Zoom 3 ahead'},
   ev:{rolled:(n,d,b)=>`${n} rolled ${DICE[d-1]}${b ? ' +2' : ''}`, remote:(n,d)=>`${n} used the remote: ${d}`, played:(n,c)=>`${n} played ${c}`, placed:(c,sq)=>`${c} placed on square ${sq}`,
@@ -441,6 +442,9 @@ function render(){
   $('bRoll').disabled = !myTurn || S.phase !== 'pre' || armed >= 0;
   $('bRoll').textContent = myTurn ? t('roll') : t('notYour')(N[S.turn]);
   $('endRow').classList.toggle('hidden', !S.winner);
+  const otherName = other(mySide) === 1 ? G.a : G.b;
+  $('bSwap').textContent = t('swapSide')(ICON[other(mySide)] + ' ' + otherName);
+  $('bMine').textContent = t('myLink');
 }
 
 function applyLang(){
@@ -507,6 +511,8 @@ $('bRematch').onclick = async () => {
   try { await fetch(RELAY + G.room, {method:'POST', body:JSON.stringify({id:oldId, by:mySide, t:'new', hash})}); } catch {}
 };
 $('bNew').onclick = () => { liveClose(); openSetup(); };
+$('bSwap').onclick = () => { if (!G) return; mySide = other(mySide); localStorage.setItem(sideKey(G.id), String(mySide)); armed = -1; toast(t('swapped')(ICON[mySide] + ' ' + (mySide === 1 ? G.a : G.b))); render(); ping(); };
+$('bMine').onclick = async () => { if (!G) return; const url = link(mySide); try { await navigator.clipboard.writeText(url); toast(t('myCopied')); } catch { $('invUrl').value = url; $('invite').classList.remove('hidden'); toast(LANG === 'zh' ? '长按上面的链接复制' : 'Tap and hold the link above to copy'); } };
 $('bRules').onclick = () => { applyLang(); show('rules'); };
 $('bRulesOk').onclick = () => { localStorage.setItem('race-seen-rules-v3', '1'); if (G){ show('game'); render(); } else openSetup(); };
 $('bLang').onclick = () => { LANG = LANG === 'zh' ? 'en' : 'zh'; localStorage.setItem('race-lang', LANG); if (G) replay(); applyLang(); if (G && !$('game').classList.contains('hidden')) render(); };
