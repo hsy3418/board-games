@@ -1,0 +1,302 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#f3ecd9">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Burrow 🐰 a 2-player strategy game</title>
+<meta property="og:title" content="Burrow: your move!">
+<meta property="og:description" content="A two-player strategy game. Open the link to see the board and make your move.">
+<style>
+:root{--bg:#f3ecd9;--ink:#2b2a26;--muted:#7a7465;--light:#e9dcb8;--dark:#d8c897;--p1:#ffffff;--p2:#c46a2b;--accent:#3f7d3a;--hl:#ffd54f}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{margin:0;font-family:-apple-system,"Helvetica Neue",Arial,sans-serif;background:var(--bg);color:var(--ink);display:flex;justify-content:center;padding:env(safe-area-inset-top) 12px 24px}
+.wrap{width:100%;max-width:480px}
+header{display:flex;justify-content:space-between;align-items:center;padding:14px 2px 8px}
+h1{font-size:20px;margin:0}
+button{font:inherit;cursor:pointer;border:none;border-radius:12px}
+.link{background:none;color:var(--muted);font-size:15px;padding:6px 4px}
+.players{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:6px 0 12px}
+.pl{background:#fff8;border:2px solid transparent;border-radius:14px;padding:10px 12px;display:flex;align-items:center;gap:8px;font-size:15px}
+.pl.turn{border-color:var(--accent);background:#fff}
+.pl .ic{font-size:24px}
+.pl small{display:block;color:var(--muted);font-size:12px}
+.status{text-align:center;font-size:16px;min-height:44px;margin-bottom:8px;line-height:1.35}
+.board{display:grid;grid-template-columns:repeat(7,1fr);border-radius:12px;overflow:hidden;box-shadow:0 6px 18px rgba(0,0,0,.12);aspect-ratio:1;user-select:none}
+.sq{position:relative;display:flex;align-items:center;justify-content:center;font-size:min(8.5vw,40px);aspect-ratio:1}
+.sq.l{background:var(--light)}.sq.d{background:var(--dark)}
+.sq.last{box-shadow:inset 0 0 0 3px rgba(63,125,58,.55)}
+.sq.sel{background:var(--hl)!important}
+.sq.dest::after{content:"";width:28%;height:28%;border-radius:50%;background:rgba(63,125,58,.55)}
+.sq.shot::after{content:"";width:34%;height:34%;border-radius:6px;background:rgba(63,125,58,.35);border:2px dashed rgba(63,125,58,.8)}
+.pc{line-height:1;filter:drop-shadow(0 2px 1px rgba(0,0,0,.25))}
+.pc.p1{filter:drop-shadow(0 0 0 #fff) drop-shadow(0 2px 1px rgba(0,0,0,.3))}
+.bar{display:flex;gap:10px;margin-top:14px}
+.bar button{flex:1;padding:15px;font-size:16px;background:#fff;color:var(--ink)}
+.bar button.go{background:var(--accent);color:#fff}
+.card{background:#fff;border-radius:16px;padding:18px;margin-top:10px;line-height:1.55;font-size:15px}
+.card h2{font-size:17px;margin:0 0 8px}
+.card ol{padding-left:20px;margin:6px 0}
+label{display:block;font-size:14px;color:var(--muted);margin:12px 0 4px}
+input{width:100%;font:inherit;padding:12px;border-radius:12px;border:2px solid var(--light);background:#fffdf6}
+.row{display:flex;gap:8px;margin-top:8px}
+.row button{flex:1;padding:12px;background:var(--light)}
+.row button.on{background:var(--accent);color:#fff}
+.big{width:100%;padding:16px;margin-top:16px;background:var(--accent);color:#fff;font-size:17px}
+.toast{position:fixed;left:50%;bottom:30px;transform:translateX(-50%);background:#2b2a26;color:#fff;padding:10px 16px;border-radius:12px;font-size:14px;opacity:0;transition:opacity .25s;pointer-events:none}
+.toast.on{opacity:1}
+.hidden{display:none!important}
+.muted{color:var(--muted);font-size:13px}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header><h1>🐰 Burrow</h1><div><button class="link" id="bRules">Rules</button><button class="link" id="bNew">New game</button></div></header>
+
+<section id="setup" class="hidden">
+  <div class="card">
+    <h2>New game</h2>
+    <label>Your name</label><input id="nA" maxlength="16" placeholder="Your name">
+    <label>Partner's name</label><input id="nB" maxlength="16" placeholder="Their name">
+    <label>Who goes first?</label>
+    <div class="row"><button id="fMe" class="on">Me</button><button id="fHer">Partner</button></div>
+    <p class="muted">You'll play the 🐰 rabbits, your partner plays the 🦊 foxes. No accounts, no server: the whole game lives in the link you send each other.</p>
+    <button class="big" id="bStart">Start</button>
+  </div>
+</section>
+
+<section id="game" class="hidden">
+  <div class="players">
+    <div class="pl" id="pl1"><span class="ic">🐰</span><div><b id="n1"></b><small id="s1"></small></div></div>
+    <div class="pl" id="pl2"><span class="ic">🦊</span><div><b id="n2"></b><small id="s2"></small></div></div>
+  </div>
+  <div class="status" id="status"></div>
+  <div class="board" id="board"></div>
+  <div class="bar" id="actions"></div>
+  <p class="muted" style="text-align:center" id="foot"></p>
+</section>
+
+<section id="rules" class="hidden">
+  <div class="card">
+    <h2>How to play</h2>
+    <p>Each player has two animals on a 7×7 garden. On your turn, do two things:</p>
+    <ol>
+      <li><b>Move</b> one of your animals any distance in a straight line, like a chess queen: across, up/down or diagonal. You can't jump over anything.</li>
+      <li><b>Plant a bush 🌿</b> from where it landed, again in any straight line, on an empty square. Bushes are permanent.</li>
+    </ol>
+    <p><b>Goal:</b> if it's your turn and none of your animals can move, you lose. So build walls, fence your opponent in, and keep open space for yourself.</p>
+    <p class="muted">Tip: early on, think about territory, not attack. Open space near your animals is your "air".</p>
+    <p class="muted">Based on the Game of the Amazons (Walter Zamkauskas, 1988), shrunk to a 7×7 board.</p>
+    <button class="big" id="bRulesOk">Got it</button>
+  </div>
+</section>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+const N = 7, SZ = N * N;
+const ALPHA = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvw'; // 49 symbols, one per square
+const START = {1: [43, 47], 2: [1, 5]};   // rabbits bottom row (b7,f7), foxes top row (b1,f1)
+const DIRS = [[-1,0],[1,0],[0,-1],[0,1],[-1,-1],[-1,1],[1,-1],[1,1]];
+const $ = id => document.getElementById(id);
+const ICON = {1: '🐰', 2: '🦊', 3: '🌿'};
+
+let G = null;          // {id, a, b, first, moves:[[f,t,s]...]}
+let board = [];        // 0 empty, 1 rabbit, 2 fox, 3 bush
+let pending = null;    // {from, to, shot}
+let mySide = 0;
+
+// ---------- engine ----------
+function fresh(){ const b = Array(SZ).fill(0); START[1].forEach(i => b[i] = 1); START[2].forEach(i => b[i] = 2); return b; }
+function apply(b, [f, t, s]){ b[t] = b[f]; b[f] = 0; b[s] = 3; }
+function rays(b, from, ignore = -1){
+  const out = [], r0 = Math.floor(from / N), c0 = from % N;
+  for (const [dr, dc] of DIRS){
+    let r = r0 + dr, c = c0 + dc;
+    while (r >= 0 && r < N && c >= 0 && c < N){
+      const i = r * N + c;
+      if (b[i] !== 0 && i !== ignore) break;
+      out.push(i); r += dr; c += dc;
+    }
+  }
+  return out;
+}
+const sideToMove = () => (G.moves.length % 2 === 0) ? G.first : 3 - G.first;
+const canMove = (b, side) => b.some((v, i) => v === side && rays(b, i).length > 0);
+function rebuild(){ board = fresh(); G.moves.forEach(m => apply(board, m)); }
+function legal(b, side, [f, t, s]){
+  if (b[f] !== side || !rays(b, f).includes(t)) return false;
+  const c = b.slice(); c[t] = c[f]; c[f] = 0;
+  return rays(c, t).includes(s);
+}
+
+// ---------- link encoding ----------
+const enc = ms => ms.map(m => m.map(i => ALPHA[i]).join('')).join('');
+function dec(str){
+  const out = [];
+  for (let k = 0; k + 2 < str.length; k += 3) out.push([0,1,2].map(j => ALPHA.indexOf(str[k + j])));
+  return out;
+}
+function link(){
+  const p = new URLSearchParams({id: G.id, a: G.a, b: G.b, f: G.first, m: enc(G.moves)});
+  return location.origin + location.pathname + '#' + p.toString();
+}
+function readHash(){
+  const p = new URLSearchParams(location.hash.slice(1));
+  if (!p.get('id')) return null;
+  const g = {id: p.get('id'), a: p.get('a') || 'Player 1', b: p.get('b') || 'Player 2', first: +p.get('f') === 2 ? 2 : 1, moves: dec(p.get('m') || '')};
+  // validate the move list so a broken link can't produce an impossible board
+  let b = fresh(), side = g.first;
+  for (let k = 0; k < g.moves.length; k++){
+    const m = g.moves[k];
+    if (m.some(x => x < 0) || !legal(b, side, m)){ g.moves = g.moves.slice(0, k); toast('That link had a broken move, showing the game up to it'); break; }
+    apply(b, m); side = 3 - side;
+  }
+  return g;
+}
+
+// which side this browser plays in a given game
+const sideKey = id => 'burrow-side-' + id;
+const getSide = id => +(localStorage.getItem(sideKey(id)) || 0);
+const setSide = (id, s) => localStorage.setItem(sideKey(id), String(s));
+
+// ---------- views ----------
+function show(id){ ['setup','game','rules'].forEach(v => $(v).classList.toggle('hidden', v !== id)); }
+function toast(t){ const el = $('toast'); el.textContent = t; el.classList.add('on'); clearTimeout(toast.h); toast.h = setTimeout(() => el.classList.remove('on'), 2200); }
+const nameOf = s => s === 1 ? G.a : G.b;
+
+function render(){
+  const turn = sideToMove();
+  const over = !pending && !canMove(board, turn);
+  $('n1').textContent = G.a; $('n2').textContent = G.b;
+  $('s1').textContent = mySide === 1 ? 'you' : ''; $('s2').textContent = mySide === 2 ? 'you' : '';
+  $('pl1').classList.toggle('turn', !over && turn === 1); $('pl2').classList.toggle('turn', !over && turn === 2);
+
+  const last = G.moves[G.moves.length - 1] || [];
+  const myTurn = mySide === turn;
+  let sel = -1, marks = [], markCls = '';
+  if (pending){
+    if (pending.to == null){ sel = pending.from; marks = rays(board, pending.from); markCls = 'dest'; }
+    else if (pending.shot == null){ sel = pending.to; marks = rays(board, pending.to); markCls = 'shot'; }
+  }
+  const html = [];
+  for (let i = 0; i < SZ; i++){
+    const r = Math.floor(i / N), c = i % N;
+    const cls = ['sq', (r + c) % 2 ? 'd' : 'l'];
+    if (last.includes(i) && !pending) cls.push('last');
+    if (i === sel) cls.push('sel');
+    if (marks.includes(i)) cls.push(markCls);
+    const v = board[i];
+    html.push(`<div class="${cls.join(' ')}" data-i="${i}">${v ? `<span class="pc p${v}">${ICON[v]}</span>` : ''}</div>`);
+  }
+  $('board').innerHTML = html.join('');
+
+  let st, acts = [];
+  if (over){
+    const winner = 3 - turn;
+    st = `🏆 <b>${esc(nameOf(winner))}</b> wins! ${esc(nameOf(turn))} has no moves left.`;
+    acts.push(`<button class="go" id="aRematch">Rematch</button>`, `<button id="aShare">Send final board</button>`);
+  } else if (pending && pending.shot != null){
+    st = `Happy with that? Send it to ${esc(nameOf(3 - mySide))}.`;
+    acts.push(`<button id="aUndo">↩ Undo</button>`, `<button class="go" id="aSend">📤 Send move</button>`);
+  } else if (myTurn){
+    st = !pending ? `<b>Your turn.</b> Tap one of your ${ICON[mySide]} to move it.` :
+         pending.to == null ? `Now tap where it should go.` : `Now tap a square to plant a bush 🌿.`;
+    if (pending) acts.push(`<button id="aUndo">↩ Undo</button>`);
+  } else {
+    st = `Waiting for <b>${esc(nameOf(turn))}</b> ${ICON[turn]} to move.`;
+    acts.push(`<button id="aShare">📤 Resend link</button>`, `<button id="aSwap">I'm ${esc(nameOf(turn))}</button>`);
+  }
+  $('status').innerHTML = st;
+  $('actions').innerHTML = acts.join('');
+  $('foot').textContent = `Move ${Math.floor(G.moves.length / 2) + 1} · bushes planted: ${G.moves.length}`;
+  bindActions();
+}
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+function bindActions(){
+  const on = (id, fn) => { const el = $(id); if (el) el.onclick = fn; };
+  on('aUndo', () => { pending = null; rebuild(); render(); });
+  on('aSend', sendMove);
+  on('aShare', () => share(`Burrow: ${nameOf(sideToMove())}'s move`));
+  on('aSwap', () => { mySide = sideToMove(); setSide(G.id, mySide); render(); });
+  on('aRematch', () => { const loser = sideToMove(); startGame({a: G.a, b: G.b, first: loser}, mySide || 1); });
+}
+
+$('board').onclick = e => {
+  const sq = e.target.closest('.sq'); if (!sq) return;
+  const i = +sq.dataset.i, turn = sideToMove();
+  if (mySide !== turn || !canMove(board, turn)) return;
+  if (pending && pending.shot != null) return;
+  if (!pending || pending.to == null){
+    if (board[i] === turn && rays(board, i).length){ pending = {from: i}; render(); return; }
+    if (pending && rays(board, pending.from).includes(i)){
+      pending.to = i; board[i] = board[pending.from]; board[pending.from] = 0; render(); return;
+    }
+    if (board[i] === turn) toast('That one is boxed in, pick the other');
+    return;
+  }
+  if (pending.shot == null && rays(board, pending.to).includes(i)){
+    pending.shot = i; board[i] = 3; render();
+  }
+};
+
+async function sendMove(){
+  G.moves.push([pending.from, pending.to, pending.shot]);
+  pending = null;
+  history.replaceState(null, '', link());
+  rebuild(); render();
+  const next = sideToMove();
+  await share(canMove(board, next) ? `Your move in Burrow 🐰🦊` : `Burrow: game over!`);
+}
+
+async function share(text){
+  const url = link();
+  if (navigator.share){
+    try { await navigator.share({title: 'Burrow', text, url}); return; } catch (e) { if (e && e.name === 'AbortError') return; }
+  }
+  try { await navigator.clipboard.writeText(url); toast('Link copied, paste it to your partner'); }
+  catch { prompt('Copy this link and send it:', url); }
+}
+
+function startGame({a, b, first}, side){
+  G = {id: Math.random().toString(36).slice(2, 8), a, b, first, moves: []};
+  mySide = side; setSide(G.id, side);
+  pending = null; rebuild();
+  history.replaceState(null, '', link());
+  show('game'); render();
+  if (first !== side){ toast('Partner goes first, send them the link'); setTimeout(() => share(`Your move in Burrow 🐰🦊`), 400); }
+}
+
+// setup form
+let firstMe = true;
+$('fMe').onclick = () => { firstMe = true; $('fMe').classList.add('on'); $('fHer').classList.remove('on'); };
+$('fHer').onclick = () => { firstMe = false; $('fHer').classList.add('on'); $('fMe').classList.remove('on'); };
+$('bStart').onclick = () => {
+  const a = $('nA').value.trim() || 'Me', b = $('nB').value.trim() || 'Partner';
+  localStorage.setItem('burrow-names', JSON.stringify([a, b]));
+  startGame({a, b, first: firstMe ? 1 : 2}, 1);
+};
+$('bNew').onclick = () => { const n = JSON.parse(localStorage.getItem('burrow-names') || '[]'); $('nA').value = n[0] || ''; $('nB').value = n[1] || ''; show('setup'); };
+$('bRules').onclick = () => show('rules');
+$('bRulesOk').onclick = () => { localStorage.setItem('burrow-seen-rules', '1'); G ? show('game') : show('setup'); if (G) render(); };
+
+function load(){
+  const g = readHash();
+  if (!g){ $('bNew').onclick(); return; }
+  G = g; pending = null; rebuild();
+  mySide = getSide(G.id);
+  if (!mySide){
+    // first time this browser opens the game: whoever's turn it is, is probably the person opening it
+    mySide = G.moves.length === 0 && G.first === 1 ? 1 : sideToMove();
+    setSide(G.id, mySide);
+  }
+  show(localStorage.getItem('burrow-seen-rules') ? 'game' : 'rules');
+  render();
+}
+window.addEventListener('hashchange', load);
+load();
+</script>
+</body>
+</html>
