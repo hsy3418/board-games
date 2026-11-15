@@ -40,7 +40,7 @@ button{font:inherit;cursor:pointer;border:none;border-radius:12px}
 .card h2{font-size:17px;margin:0 0 8px}
 .card ol{padding-left:20px;margin:6px 0}
 label{display:block;font-size:14px;color:var(--muted);margin:12px 0 4px}
-input{width:100%;font:inherit;padding:12px;border-radius:12px;border:2px solid var(--light);background:#fffdf6}
+input{width:100%;margin-top:8px;font:inherit;padding:12px;border-radius:12px;border:2px solid var(--light);background:#fffdf6}
 .row{display:flex;gap:8px;margin-top:8px}
 .row button{flex:1;padding:12px;background:var(--light)}
 .row button.on{background:var(--accent);color:#fff}
@@ -78,6 +78,12 @@ input{width:100%;font:inherit;padding:12px;border-radius:12px;border:2px solid v
   <div class="status" id="status"></div>
   <div class="board" id="board"></div>
   <div class="bar" id="actions"></div>
+  <div class="card hidden" id="invite">
+    <b id="invTitle">Send this link to your partner</b>
+    <input id="invUrl" readonly onclick="this.select()">
+    <div class="row"><button id="invShare" class="on">📤 Share</button><button id="invCopy">📋 Copy link</button></div>
+    <p class="muted" id="invNote">Opening it puts her on the 🦊 side. You only need to send it once.</p>
+  </div>
   <p class="muted" style="text-align:center" id="foot"></p>
 </section>
 
@@ -183,7 +189,7 @@ async function catchUp(){
 }
 function onMsg(m, quiet){
   if (!m || m.id !== G.id) return;
-  if (m.by && m.by !== mySide && m.t === 'ping'){ lastSeen = Date.now(); renderPresence(); if (!m.reply) ping(true); return; }
+  if (m.by && m.by !== mySide && m.t === 'ping'){ lastSeen = Date.now(); renderPresence(); hideInvite(); if (!m.reply) ping(true); return; }
   if (m.t === 'mv' && m.n === G.moves.length && Array.isArray(m.m) && legal(board0(), sideToMove(), m.m)){
     if (m.by !== mySide) lastSeen = Date.now();
     G.moves.push(m.m); pending = null;
@@ -312,14 +318,31 @@ async function sendMove(){
   await share(canMove(board, next) ? `Your move in Burrow 🐰🦊` : `Burrow: game over!`, next);
 }
 
+// Share only the URL: on iPhone, sharing text + url can glue them together and break the link.
 async function share(text, forSide = 0){
   const url = link(forSide);
+  showInvite(forSide);
   if (navigator.share){
-    try { await navigator.share({title: 'Burrow', text, url}); return; } catch (e) { if (e && e.name === 'AbortError') return; }
+    try { await navigator.share({title: 'Burrow', url}); return; } catch (e) { if (e && e.name === 'AbortError') return; }
   }
-  try { await navigator.clipboard.writeText(url); toast('Link copied, paste it to your partner'); }
-  catch { prompt('Copy this link and send it:', url); }
+  copyLink(url);
 }
+async function copyLink(url){
+  try { await navigator.clipboard.writeText(url); toast('Link copied'); return; } catch {}
+  const el = $('invUrl'); el.value = url; el.focus(); el.select(); el.setSelectionRange(0, url.length);
+  try { if (document.execCommand('copy')) { toast('Link copied'); return; } } catch {}
+  toast('Tap and hold the link above to copy it');
+}
+function showInvite(forSide){
+  const url = link(forSide);
+  $('invUrl').value = url;
+  $('invTitle').textContent = G.room ? 'Send this link to your partner' : 'Send this link for the next move';
+  $('invNote').textContent = G.room ? `Opening it puts them on the ${ICON[forSide]} side. You only need to send it once.` : 'Each move makes a new link.';
+  $('invite').classList.remove('hidden');
+  $('invShare').onclick = () => share('', forSide);
+  $('invCopy').onclick = () => copyLink(url);
+}
+const hideInvite = () => $('invite').classList.add('hidden');
 
 const rnd = n => Array.from(crypto.getRandomValues(new Uint8Array(n)), x => 'abcdefghijklmnopqrstuvwxyz0123456789'[x % 36]).join('');
 function startGame({a, b, first, live}, side){
@@ -328,8 +351,8 @@ function startGame({a, b, first, live}, side){
   pending = null; rebuild();
   history.replaceState(null, '', link());
   show('game'); render();
-  if (G.room){ liveConnect(); toast('Send the invite link to your partner'); setTimeout(() => share(`Come play Burrow with me 🐰🦊`, 3 - side), 400); }
-  else if (first !== side){ toast('Partner goes first, send them the link'); setTimeout(() => share(`Your move in Burrow 🐰🦊`, 3 - side), 400); }
+  if (G.room){ liveConnect(); showInvite(3 - side); }
+  else if (first !== side){ showInvite(3 - side); }
 }
 
 // setup form
@@ -348,6 +371,7 @@ $('bRules').onclick = () => show('rules');
 $('bRulesOk').onclick = () => { localStorage.setItem('burrow-seen-rules', '1'); G ? show('game') : show('setup'); if (G) render(); };
 
 function load(){
+  hideInvite();
   const g = readHash();
   if (!g){ $('bNew').onclick(); return; }
   G = g; pending = null; rebuild();
