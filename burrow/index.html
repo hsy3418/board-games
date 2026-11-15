@@ -22,6 +22,7 @@ button{font:inherit;cursor:pointer;border:none;border-radius:12px}
 .pl.turn{border-color:var(--accent);background:#fff}
 .pl .ic{font-size:24px}
 .pl small{display:block;color:var(--muted);font-size:12px}
+.live{display:inline-block;width:8px;height:8px;border-radius:50%;background:#bbb;margin-left:4px;vertical-align:1px}.live.on{background:#2e7d32}
 .status{text-align:center;font-size:16px;min-height:44px;margin-bottom:8px;line-height:1.35}
 .board{display:grid;grid-template-columns:repeat(7,1fr);border-radius:12px;overflow:hidden;box-shadow:0 6px 18px rgba(0,0,0,.12);aspect-ratio:1;user-select:none}
 .sq{position:relative;display:flex;align-items:center;justify-content:center;font-size:min(8.5vw,40px);aspect-ratio:1}
@@ -59,9 +60,12 @@ input{width:100%;font:inherit;padding:12px;border-radius:12px;border:2px solid v
     <h2>New game</h2>
     <label>Your name</label><input id="nA" maxlength="16" placeholder="Your name">
     <label>Partner's name</label><input id="nB" maxlength="16" placeholder="Their name">
+    <label>How do you want to play?</label>
+    <div class="row"><button id="mLive" class="on">🔴 Live room</button><button id="mLink">✉️ Send links</button></div>
+    <p class="muted" id="mHelp">Both of you open the same link and play in real time. Moves appear instantly on both phones.</p>
     <label>Who goes first?</label>
     <div class="row"><button id="fMe" class="on">Me</button><button id="fHer">Partner</button></div>
-    <p class="muted">You'll play the 🐰 rabbits, your partner plays the 🦊 foxes. No accounts, no server: the whole game lives in the link you send each other.</p>
+    <p class="muted">You'll play the 🐰 rabbits, your partner plays the 🦊 foxes. No accounts. The board also lives in the link, so you can always pick a game back up.</p>
     <button class="big" id="bStart">Start</button>
   </div>
 </section>
@@ -138,14 +142,17 @@ function dec(str){
   for (let k = 0; k + 2 < str.length; k += 3) out.push([0,1,2].map(j => ALPHA.indexOf(str[k + j])));
   return out;
 }
-function link(){
+function link(forSide = 0){
   const p = new URLSearchParams({id: G.id, a: G.a, b: G.b, f: G.first, m: enc(G.moves)});
+  if (G.room) p.set('r', G.room);
+  if (forSide) p.set('p', forSide);
   return location.origin + location.pathname + '#' + p.toString();
 }
 function readHash(){
   const p = new URLSearchParams(location.hash.slice(1));
   if (!p.get('id')) return null;
-  const g = {id: p.get('id'), a: p.get('a') || 'Player 1', b: p.get('b') || 'Player 2', first: +p.get('f') === 2 ? 2 : 1, moves: dec(p.get('m') || '')};
+  const g = {id: p.get('id'), a: p.get('a') || 'Player 1', b: p.get('b') || 'Player 2', first: +p.get('f') === 2 ? 2 : 1, moves: dec(p.get('m') || ''),
+             room: /^[A-Za-z0-9_-]{8,64}$/.test(p.get('r') || '') ? p.get('r') : '', invited: +p.get('p') || 0};
   // validate the move list so a broken link can't produce an impossible board
   let b = fresh(), side = g.first;
   for (let k = 0; k < g.moves.length; k++){
@@ -155,6 +162,47 @@ function readHash(){
   }
   return g;
 }
+
+// ---------- live room: tiny pub/sub relay (ntfy.sh). Only moves, names and pings go through it. ----------
+const RELAY = 'https://ntfy.sh/';
+let es = null, lastSeen = 0, pingTimer = null;
+function liveConnect(){
+  liveClose(); if (!G.room) return;
+  catchUp();
+  es = new EventSource(RELAY + G.room + '/sse');
+  es.onopen = () => { catchUp(); ping(); };
+  es.onmessage = e => { try { const m = JSON.parse(e.data); if (m.event === 'message') onMsg(JSON.parse(m.message)); } catch {} };
+  pingTimer = setInterval(() => { ping(); renderPresence(); }, 20000);
+}
+function liveClose(){ if (es) es.close(); es = null; clearInterval(pingTimer); }
+async function catchUp(){
+  try {
+    const txt = await (await fetch(RELAY + G.room + '/json?poll=1&since=all')).text();
+    txt.split('\n').filter(Boolean).forEach(l => { try { const m = JSON.parse(l); if (m.event === 'message') onMsg(JSON.parse(m.message), true); } catch {} });
+  } catch {}
+}
+function onMsg(m, quiet){
+  if (!m || m.id !== G.id) return;
+  if (m.by && m.by !== mySide && m.t === 'ping'){ lastSeen = Date.now(); renderPresence(); if (!m.reply) ping(true); return; }
+  if (m.t === 'mv' && m.n === G.moves.length && Array.isArray(m.m) && legal(board0(), sideToMove(), m.m)){
+    if (m.by !== mySide) lastSeen = Date.now();
+    G.moves.push(m.m); pending = null;
+    history.replaceState(null, '', link());
+    rebuild(); render();
+    if (!quiet && m.by !== mySide) buzz();
+  }
+}
+function board0(){ const b = fresh(); G.moves.forEach(x => apply(b, x)); return b; }
+function publish(obj, cache = true){
+  return fetch(RELAY + G.room + (cache ? '' : '?cache=no'), {method: 'POST', body: JSON.stringify(Object.assign({id: G.id, by: mySide}, obj))});
+}
+const ping = (reply = false) => G.room && mySide && publish({t: 'ping', reply}, false).catch(() => {});
+function renderPresence(){
+  const other = 3 - mySide, on = Date.now() - lastSeen < 50000;
+  const el = $('s' + other); if (!el || !G.room) return;
+  el.innerHTML = `${on ? 'here' : 'away'} <span class="live ${on ? 'on' : ''}"></span>`;
+}
+function buzz(){ try { navigator.vibrate && navigator.vibrate(80); } catch {} const t = document.title; document.title = '● Your move'; setTimeout(() => document.title = t, 4000); }
 
 // which side this browser plays in a given game
 const sideKey = id => 'burrow-side-' + id;
@@ -171,6 +219,7 @@ function render(){
   const over = !pending && !canMove(board, turn);
   $('n1').textContent = G.a; $('n2').textContent = G.b;
   $('s1').textContent = mySide === 1 ? 'you' : ''; $('s2').textContent = mySide === 2 ? 'you' : '';
+  renderPresence();
   $('pl1').classList.toggle('turn', !over && turn === 1); $('pl2').classList.toggle('turn', !over && turn === 2);
 
   const last = G.moves[G.moves.length - 1] || [];
@@ -198,19 +247,19 @@ function render(){
     st = `🏆 <b>${esc(nameOf(winner))}</b> wins! ${esc(nameOf(turn))} has no moves left.`;
     acts.push(`<button class="go" id="aRematch">Rematch</button>`, `<button id="aShare">Send final board</button>`);
   } else if (pending && pending.shot != null){
-    st = `Happy with that? Send it to ${esc(nameOf(3 - mySide))}.`;
-    acts.push(`<button id="aUndo">↩ Undo</button>`, `<button class="go" id="aSend">📤 Send move</button>`);
+    st = G.room ? `Happy with that?` : `Happy with that? Send it to ${esc(nameOf(3 - mySide))}.`;
+    acts.push(`<button id="aUndo">↩ Undo</button>`, `<button class="go" id="aSend">${G.room ? '✅ Confirm move' : '📤 Send move'}</button>`);
   } else if (myTurn){
     st = !pending ? `<b>Your turn.</b> Tap one of your ${ICON[mySide]} to move it.` :
          pending.to == null ? `Now tap where it should go.` : `Now tap a square to plant a bush 🌿.`;
     if (pending) acts.push(`<button id="aUndo">↩ Undo</button>`);
   } else {
-    st = `Waiting for <b>${esc(nameOf(turn))}</b> ${ICON[turn]} to move.`;
-    acts.push(`<button id="aShare">📤 Resend link</button>`, `<button id="aSwap">I'm ${esc(nameOf(turn))}</button>`);
+    st = `Waiting for <b>${esc(nameOf(turn))}</b> ${ICON[turn]} to move.` + (G.room ? `<br><span class="muted">Their move will show up here by itself.</span>` : '');
+    acts.push(`<button id="aShare">📤 ${G.room ? 'Invite link' : 'Resend link'}</button>`, `<button id="aSwap">I'm ${esc(nameOf(turn))}</button>`);
   }
   $('status').innerHTML = st;
   $('actions').innerHTML = acts.join('');
-  $('foot').textContent = `Move ${Math.floor(G.moves.length / 2) + 1} · bushes planted: ${G.moves.length}`;
+  $('foot').textContent = `${G.room ? '🔴 Live room · ' : ''}Move ${Math.floor(G.moves.length / 2) + 1} · bushes planted: ${G.moves.length}`;
   bindActions();
 }
 const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -219,9 +268,9 @@ function bindActions(){
   const on = (id, fn) => { const el = $(id); if (el) el.onclick = fn; };
   on('aUndo', () => { pending = null; rebuild(); render(); });
   on('aSend', sendMove);
-  on('aShare', () => share(`Burrow: ${nameOf(sideToMove())}'s move`));
+  on('aShare', () => share(G.room ? `Come play Burrow with me 🐰🦊` : `Burrow: ${nameOf(sideToMove())}'s move`, 3 - mySide));
   on('aSwap', () => { mySide = sideToMove(); setSide(G.id, mySide); render(); });
-  on('aRematch', () => { const loser = sideToMove(); startGame({a: G.a, b: G.b, first: loser}, mySide || 1); });
+  on('aRematch', () => { const loser = sideToMove(); startGame({a: G.a, b: G.b, first: loser, live: !!G.room}, mySide || 1); });
 }
 
 $('board').onclick = e => {
@@ -243,16 +292,28 @@ $('board').onclick = e => {
 };
 
 async function sendMove(){
-  G.moves.push([pending.from, pending.to, pending.shot]);
+  const mv = [pending.from, pending.to, pending.shot];
+  if (G.room){
+    const n0 = G.moves.length;
+    const btn = $('aSend'); if (btn){ btn.disabled = true; btn.textContent = 'Sending…'; }
+    try {
+      const res = await publish({t: 'mv', n: G.moves.length, m: mv});
+      if (!res.ok) throw new Error(res.status);
+    } catch (e) { toast('Couldn\'t reach the live room, check your connection and try again'); if (btn){ btn.disabled = false; btn.textContent = '✅ Confirm move'; } return; }
+    if (G.moves.length === n0) G.moves.push(mv);   // our own echo from the relay may already have added it
+    pending = null; history.replaceState(null, '', link()); rebuild(); render();
+    return;
+  }
+  G.moves.push(mv);
   pending = null;
   history.replaceState(null, '', link());
   rebuild(); render();
   const next = sideToMove();
-  await share(canMove(board, next) ? `Your move in Burrow 🐰🦊` : `Burrow: game over!`);
+  await share(canMove(board, next) ? `Your move in Burrow 🐰🦊` : `Burrow: game over!`, next);
 }
 
-async function share(text){
-  const url = link();
+async function share(text, forSide = 0){
+  const url = link(forSide);
   if (navigator.share){
     try { await navigator.share({title: 'Burrow', text, url}); return; } catch (e) { if (e && e.name === 'AbortError') return; }
   }
@@ -260,23 +321,27 @@ async function share(text){
   catch { prompt('Copy this link and send it:', url); }
 }
 
-function startGame({a, b, first}, side){
-  G = {id: Math.random().toString(36).slice(2, 8), a, b, first, moves: []};
+const rnd = n => Array.from(crypto.getRandomValues(new Uint8Array(n)), x => 'abcdefghijklmnopqrstuvwxyz0123456789'[x % 36]).join('');
+function startGame({a, b, first, live}, side){
+  G = {id: rnd(8), a, b, first, moves: [], room: live ? 'burrow-' + rnd(20) : ''};
   mySide = side; setSide(G.id, side);
   pending = null; rebuild();
   history.replaceState(null, '', link());
   show('game'); render();
-  if (first !== side){ toast('Partner goes first, send them the link'); setTimeout(() => share(`Your move in Burrow 🐰🦊`), 400); }
+  if (G.room){ liveConnect(); toast('Send the invite link to your partner'); setTimeout(() => share(`Come play Burrow with me 🐰🦊`, 3 - side), 400); }
+  else if (first !== side){ toast('Partner goes first, send them the link'); setTimeout(() => share(`Your move in Burrow 🐰🦊`, 3 - side), 400); }
 }
 
 // setup form
-let firstMe = true;
+let firstMe = true, liveMode = true;
+$('mLive').onclick = () => { liveMode = true; $('mLive').classList.add('on'); $('mLink').classList.remove('on'); $('mHelp').textContent = 'Both of you open the same link and play in real time. Moves appear instantly on both phones.'; };
+$('mLink').onclick = () => { liveMode = false; $('mLink').classList.add('on'); $('mLive').classList.remove('on'); $('mHelp').textContent = 'Take turns at your own pace: after each move you send a new link over WhatsApp or iMessage.'; };
 $('fMe').onclick = () => { firstMe = true; $('fMe').classList.add('on'); $('fHer').classList.remove('on'); };
 $('fHer').onclick = () => { firstMe = false; $('fHer').classList.add('on'); $('fMe').classList.remove('on'); };
 $('bStart').onclick = () => {
   const a = $('nA').value.trim() || 'Me', b = $('nB').value.trim() || 'Partner';
   localStorage.setItem('burrow-names', JSON.stringify([a, b]));
-  startGame({a, b, first: firstMe ? 1 : 2}, 1);
+  startGame({a, b, first: firstMe ? 1 : 2, live: liveMode}, 1);
 };
 $('bNew').onclick = () => { const n = JSON.parse(localStorage.getItem('burrow-names') || '[]'); $('nA').value = n[0] || ''; $('nB').value = n[1] || ''; show('setup'); };
 $('bRules').onclick = () => show('rules');
@@ -288,12 +353,14 @@ function load(){
   G = g; pending = null; rebuild();
   mySide = getSide(G.id);
   if (!mySide){
-    // first time this browser opens the game: whoever's turn it is, is probably the person opening it
-    mySide = G.moves.length === 0 && G.first === 1 ? 1 : sideToMove();
+    // first time this browser opens the game: trust the side written into the link, else whoever's turn it is
+    mySide = G.invited === 1 || G.invited === 2 ? G.invited : sideToMove();
     setSide(G.id, mySide);
   }
+  history.replaceState(null, '', link());   // drop the invite marker from the address bar
   show(localStorage.getItem('burrow-seen-rules') ? 'game' : 'rules');
   render();
+  liveConnect();
 }
 window.addEventListener('hashchange', load);
 load();
