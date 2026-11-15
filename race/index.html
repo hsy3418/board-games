@@ -111,6 +111,21 @@ input{width:100%;font:inherit;padding:12px;border-radius:12px;border:2px solid #
 .win{font-size:21px;font-weight:800}
 .confetti{position:fixed;top:-20px;width:9px;height:14px;z-index:40;pointer-events:none;border-radius:2px;animation:fall linear forwards}
 @keyframes fall{to{transform:translateY(110vh) rotate(720deg)}}
+.board{grid-template-columns:repeat(8,1fr)}
+.sq.deco{font-size:min(3.6vw,15px);opacity:.75}
+.sq.choice{cursor:pointer}
+.tok.frozen{filter:saturate(.2) brightness(1.1);box-shadow:0 0 0 3px #9fd8ff,0 3px 6px #0003}
+.tok.frozen::after{content:"🧊";position:absolute;left:-6px;top:-8px;font-size:12px}
+.tok.ready{animation:bob 1.1s ease-in-out infinite}
+.sq .mark.via{border-color:#8e44ad}.sq .mark.via b{background:#8e44ad}
+.sq.bridge .stone{background:radial-gradient(circle at 35% 30%,#fff4e0,#d7a86e 75%);border-radius:30%}
+.picks{display:flex;gap:10px;align-items:center}
+.pbtns{flex:1;display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.pbtns.six{grid-template-columns:repeat(6,1fr)}
+.pbtns button.via{border-color:#8e44ad;box-shadow:0 4px 0 #6c3483}
+.pbtns button.wide{grid-column:1/-1;padding:16px}
+.cardb.glow{animation:glow 1.2s ease-in-out infinite}
+@keyframes glow{50%{box-shadow:0 4px 0 #e5c88c,0 0 0 4px #ffd54f}}
 .hidden{display:none!important}
 </style>
 </head>
@@ -154,91 +169,161 @@ input{width:100%;font:inherit;padding:12px;border-radius:12px;border:2px solid #
 <div class="toast" id="toast"></div>
 
 <script>
-// ================= rules engine v3 (pure, deterministic) =================
-let END = 31;                                   // 32 squares: 0 = start, 31 = finish (exact roll needed)
-let SPECIAL = {3:'carrot',6:'gift',9:'safe',11:'hole',13:'gift',15:'rocket',18:'safe',20:'carrot',22:'gift',24:'hole',27:'safe'};
+// ================= rules engine v4 (pure, deterministic) =================
+// Track: 35 main nodes (0 start .. 34 finish) on an 8x7 grid, plus two bridge shortcuts.
+const END = 34;
+const NODE_RC = (() => {            // node -> [row, col] (row 0 = top)
+  const m = [];
+  for (let c = 0; c < 8; c++) m.push([6, c]);       // 0..7
+  m.push([5, 7]);                                    // 8
+  for (let c = 7; c >= 0; c--) m.push([4, c]);      // 9..16
+  m.push([3, 0]);                                    // 17
+  for (let c = 0; c < 8; c++) m.push([2, c]);       // 18..25
+  m.push([1, 7]);                                    // 26
+  for (let c = 7; c >= 0; c--) m.push([0, c]);      // 27..34
+  m.push([3, 2]);                                    // 35 bridge A: 14 -> 35 -> 20
+  m.push([1, 5]);                                    // 36 bridge B: 23 -> 36 -> 29
+  return m;
+})();
+const NODES = NODE_RC.length;
+const NEXT = (() => { const n = []; for (let i = 0; i < END; i++) n[i] = [i + 1]; n[END] = []; n[14] = [15, 35]; n[35] = [20]; n[23] = [24, 36]; n[36] = [29]; return n; })();
+const PREV = (() => { const p = [null]; for (let i = 1; i <= END; i++) p[i] = i - 1; p[35] = 14; p[36] = 23; return p; })();
+const BRIDGE = new Set([35, 36]);
+const SPECIAL = {2:'rocket',4:'carrot',6:'gift',8:'safe',12:'gift',13:'hole',17:'safe',19:'gift',24:'hole',26:'safe',28:'carrot',30:'gift',35:'bridge',36:'bridge'};
 const BUMP = 6;
-const CARDS = ['banana','wall','remote','shield','boost'];
-const DRAW = ['banana','banana','wall','wall','remote','remote','shield','shield','boost','boost'];
-const TARGETED = c => c === 'banana' || c === 'wall';
+const CARDS = ['banana','wall','remote','boost','shield','hook','snail','freeze','double','reroll'];   // draw digit 0..9 = one each
+const TARGET_AHEAD = c => c === 'banana' || c === 'wall';
+const TARGET_RUNNER = c => c === 'hook' || c === 'freeze';
 const other = p => 3 - p;
+
 function initState(G){
-  return {pos:[null,[0,0],[0,0]], hand:[null,[CARDS[G.h[0]]],[CARDS[G.h[1]]]], items:{}, turn:G.first, phase:'pre', boost:0, used:false, die:0, draw:0, winner:0, events:[], carry:[]};
+  return {pos:[null,[0,0],[0,0]], hand:[null,[CARDS[G.h[0]]],[CARDS[G.h[1]]]], items:{}, turn:G.first, phase:'pre',
+          boost:0, used:false, die:0, draw:0, natural:false, dbl:false, snail:[0,0,0], frozen:[null,[],[]], winner:0, events:[], carry:[], fx:[]};
 }
-const done = (S, p, i) => S.pos[p][i] >= END;
-function hasShield(S, p){ return S.hand[p].includes('shield'); }
-function useShield(S, p){ const k = S.hand[p].indexOf('shield'); if (k < 0) return false; S.hand[p].splice(k, 1); ev(S, 'shield', p); return true; }
+const isHome = q => q === END;
 let evHook = null;
 function ev(S, key, ...args){ S.events.push(evHook ? evHook(key, ...args) : key); }
-// where piece i of player p stops moving k steps; null if it can't move (finished or would overshoot)
-function moveTarget(S, p, i, k){
-  if (done(S, p, i)) return null;
-  let pos = S.pos[p][i], shield = hasShield(S, p), passed = null;
-  for (let s = 1; s <= k; s++){
-    const nx = pos + 1;
-    if (nx > END) return null;
-    if (S.items[nx] === 'wall' && nx < END){ if (shield){ shield = false; passed = nx; } else return {to:nx, wall:true, passed}; }
-    pos = nx;
-  }
-  return {to:pos, wall:false, passed};
+function useShield(S, p){ const k = S.hand[p].indexOf('shield'); if (k < 0) return false; S.hand[p].splice(k, 1); ev(S, 'shield', p); return true; }
+function back(q, k){ for (let s = 0; s < k && q > 0; s++) q = PREV[q]; return q; }
+
+// all places runner i of player p can stop with k steps (branching at forks). Each: {to, via, wall, passed}
+function reach(S, p, from, k, mainOnly){
+  if (isHome(from)) return [];
+  const out = [], shield0 = S.hand[p].includes('shield');
+  (function walk(q, left, shield, passed, via){
+    if (left === 0){ out.push({to:q, via, wall:false, passed}); return; }
+    const nx = mainOnly ? NEXT[q].slice(0, 1) : NEXT[q];
+    if (!nx.length) return;                          // at finish with steps left: overshoot, illegal
+    for (const n of nx){
+      const v = via || BRIDGE.has(n);
+      if (S.items[n] === 'wall' && n !== END){
+        if (shield) walk(n, left - 1, false, n, v);
+        else out.push({to:n, via:v, wall:true, passed});
+      } else walk(n, left - 1, shield, passed, v);
+    }
+  })(from, k, shield0, null, false);
+  const seen = new Set();
+  return out.filter(o => { const key = o.to + ':' + o.via; if (seen.has(key)) return false; seen.add(key); return true; });
 }
-function options(S){ const p = S.turn, k = S.die + S.boost; return [0, 1].map(i => moveTarget(S, p, i, k)); }
-function validTargets(S, me){
-  const op = other(me), set = new Set();
-  for (const q of S.pos[op]) if (q < END) for (let sq = q + 1; sq <= Math.min(END - 1, q + 6); sq++) set.add(sq);
-  return [...set].filter(sq => !S.items[sq] && !S.pos[me].includes(sq) && !S.pos[op].includes(sq) && SPECIAL[sq] !== 'safe').sort((a, b) => a - b);
+function options(S){
+  const p = S.turn, k = S.die + S.boost;
+  if (S.dbl) return [{i:9, to:-1, via:false}];
+  const out = [];
+  for (const i of [0, 1]){ if (S.frozen[p].includes(i)) continue; for (const o of reach(S, p, S.pos[p][i], k)) out.push(Object.assign({i}, o)); }
+  return out;
+}
+function canDouble(S){ const p = S.turn, k = S.die + S.boost; return [0, 1].some(i => !S.frozen[p].includes(i) && reach(S, p, S.pos[p][i], k, true).length); }
+function aheadNodes(S, p, steps){
+  const set = new Set();
+  for (const q of S.pos[p]){ if (isHome(q)) continue; (function w(n, d){ if (d === 0) return; for (const m of NEXT[n]){ set.add(m); w(m, d - 1); } })(q, steps); }
+  return set;
+}
+function validTargets(S, me, card){
+  const op = other(me);
+  if (TARGET_AHEAD(card)) return [...aheadNodes(S, op, 6)].filter(n => n !== END && !S.items[n] && !S.pos[me].includes(n) && !S.pos[op].includes(n) && SPECIAL[n] !== 'safe').sort((a, b) => a - b);
+  if (card === 'hook') return [...new Set(S.pos[op].filter(q => q > 0 && !isHome(q)))];
+  if (card === 'freeze') return [...new Set(S.pos[op].filter(q => !isHome(q)))];
+  return [];
 }
 function endTurn(S, extra){
-  S.boost = 0; S.used = false; S.die = 0; S.phase = 'pre';
+  S.frozen[S.turn] = [];
+  S.boost = 0; S.used = false; S.die = 0; S.phase = 'pre'; S.dbl = false; S.natural = false;
   if (!extra) S.turn = other(S.turn);
 }
-// actions: C i sq | R d x (die 0..5, draw digit) | N v (remote 1..6) | M i (move piece i)
+function afterRoll(S){
+  const me = S.turn;
+  if (S.dbl ? !canDouble(S) : !options(S).length){ ev(S, 'noMove', me); endTurn(S, false); return; }
+  S.phase = 'pick'; S.carry = S.events.slice();
+}
+// land runner i of player me on node `to` after a move; returns true if this landing earns another turn
+function land(S, me, i, opt){
+  const op = other(me), P = S.pos[me];
+  P[i] = opt.to;
+  if (opt.passed != null){ delete S.items[opt.passed]; useShield(S, me); }
+  if (opt.wall){ delete S.items[opt.to]; ev(S, 'walled', me); }
+  let extra = false;
+  if (isHome(P[i])){ ev(S, 'home', me, i); S.fx.push({t:'🎉', at:END}); return false; }
+  if (S.items[P[i]] === 'banana'){ delete S.items[P[i]]; if (!useShield(S, me)){ S.fx.push({t:'🍌', at:P[i]}); P[i] = back(P[i], 3); ev(S, 'slipped', me); } }
+  else {
+    const sp = SPECIAL[P[i]];
+    if (sp && sp !== 'safe') ev(S, 'sq', sp);
+    if (sp === 'carrot') extra = true;
+    else if ((sp === 'hole' || sp === 'bridge') && !useShield(S, me)){ S.fx.push({t: sp === 'hole' ? '🕳️' : '💦', at:P[i]}); P[i] = back(P[i], 3); }
+    else if (sp === 'gift'){ if (S.hand[me].length >= 3) ev(S, 'handFull'); else { const c = CARDS[S.draw]; S.hand[me].push(c); ev(S, 'drew', c); } }
+    else if (sp === 'rocket'){ const r = reach(S, me, P[i], 3, true)[0]; if (r){ P[i] = r.to; if (r.passed != null){ delete S.items[r.passed]; useShield(S, me); } if (r.wall){ delete S.items[r.to]; ev(S, 'walled', me); } } }
+  }
+  const at = P[i];
+  if (at > 0 && !isHome(at) && SPECIAL[at] !== 'safe'){
+    S.pos[op].forEach((q, j) => { if (q === at && !useShield(S, op)){ S.pos[op][j] = back(q, BUMP); ev(S, 'bumped', me, op, j); S.fx.push({t:'💥', at}); } });
+  }
+  return extra;
+}
+// actions: C i sq (card i; sq = target node, or new die 0..5 for reroll) | R d x (die 0..5, draw digit 0..9) | N v (remote 1..6) | M i to (runner i, or 9 = both)
 function step(S, a){
   const me = S.turn, op = other(me);
   if (S.winner) return false;
   S.events = (S.carry || []).slice(); S.carry = []; S.fx = [];
   if (a.t === 'C'){
-    if (S.phase !== 'pre' || S.used) return false;
+    if (S.used) return false;
     const c = S.hand[me][a.i]; if (!c || c === 'shield') return false;
-    if (TARGETED(c) && !validTargets(S, me).includes(a.sq)) return false;
+    if (c === 'reroll' ? S.phase !== 'pick' : S.phase !== 'pre') return false;
+    if ((TARGET_AHEAD(c) || TARGET_RUNNER(c)) && !validTargets(S, me, c).includes(a.sq)) return false;
+    if (c === 'reroll' && !(a.sq >= 0 && a.sq <= 5)) return false;
     S.hand[me].splice(a.i, 1); S.used = true; ev(S, 'played', me, c);
-    if (TARGETED(c)){ S.items[a.sq] = c; ev(S, 'placed', c, a.sq); }
+    if (TARGET_AHEAD(c)){ S.items[a.sq] = c; ev(S, 'placed', c, a.sq); }
+    else if (c === 'hook'){ S.pos[op].forEach((q, j) => { if (q === a.sq && !useShield(S, op)){ S.pos[op][j] = back(q, 3); ev(S, 'hooked', op, j); S.fx.push({t:'🪝', at:q}); } }); }
+    else if (c === 'freeze'){ S.pos[op].forEach((q, j) => { if (q === a.sq && !useShield(S, op)){ S.frozen[op].push(j); ev(S, 'frozen', op, j); S.fx.push({t:'🧊', at:q}); } }); }
+    else if (c === 'snail'){ if (!useShield(S, op)){ S.snail[op] = 1; ev(S, 'snailed', op); } }
     else if (c === 'boost') S.boost = 2;
+    else if (c === 'double') S.dbl = true;
     else if (c === 'remote') S.phase = 'remote';
+    else if (c === 'reroll'){ S.die = a.sq + 1; S.natural = true; ev(S, 'rerolled', me, S.die); afterRoll(S); return true; }
     S.carry = S.events.slice(); return true;
   }
   if (a.t === 'R' || a.t === 'N'){
     if (a.t === 'R' && S.phase !== 'pre') return false;
     if (a.t === 'N' && (S.phase !== 'remote' || a.v < 1 || a.v > 6)) return false;
-    S.die = a.t === 'R' ? a.d + 1 : a.v; S.draw = a.t === 'R' ? a.x : 0; S.remoteUsed = a.t === 'N';
-    ev(S, a.t === 'R' ? 'rolled' : 'remote', me, S.die, S.boost);
-    if (!options(S).some(Boolean)){ ev(S, 'noMove', me); endTurn(S, false); return true; }
-    S.phase = 'pick'; S.carry = S.events.slice(); return true;
+    S.draw = a.t === 'R' ? a.x : 0;
+    if (a.t === 'R'){
+      S.die = a.d + 1; S.natural = true;
+      if (S.snail[me]){ S.snail[me] = 0; S.die = Math.ceil(S.die / 2); S.natural = false; ev(S, 'rolled', me, a.d + 1, S.boost); ev(S, 'slowed', me, S.die); }
+      else ev(S, 'rolled', me, S.die, S.boost);
+    } else { S.die = a.v; S.natural = false; ev(S, 'remote', me, S.die); }
+    afterRoll(S); return true;
   }
   if (a.t !== 'M' || S.phase !== 'pick') return false;
-  const opt = options(S)[a.i]; if (!opt) return false;
-  const P = S.pos[me];
-  P[a.i] = opt.to;
-  if (opt.passed != null){ delete S.items[opt.passed]; useShield(S, me); }
-  if (opt.wall){ delete S.items[opt.to]; ev(S, 'walled', me); }
-  let extra = S.die === 6 && !S.remoteUsed;
-  if (P[a.i] >= END){ ev(S, 'home', me, a.i); S.fx.push({t:'🎉', at:END}); }
-  else if (S.items[P[a.i]] === 'banana'){ delete S.items[P[a.i]]; if (!useShield(S, me)){ S.fx.push({t:'🍌', at:P[a.i]}); P[a.i] = Math.max(0, P[a.i] - 3); ev(S, 'slipped', me); } }
-  else {
-    const sp = SPECIAL[P[a.i]];
-    if (sp && sp !== 'safe') ev(S, 'sq', sp);
-    if (sp === 'carrot') extra = true;
-    else if (sp === 'hole'){ if (!useShield(S, me)) P[a.i] = Math.max(0, P[a.i] - 3); }
-    else if (sp === 'gift'){ if (S.hand[me].length >= 3) ev(S, 'handFull'); else { const c = DRAW[S.draw]; S.hand[me].push(c); ev(S, 'drew', c); } }
-    else if (sp === 'rocket'){ const r = moveTarget(S, me, a.i, 3); if (r){ P[a.i] = r.to; if (r.passed != null){ delete S.items[r.passed]; useShield(S, me); } if (r.wall){ delete S.items[r.to]; ev(S, 'walled', me); } } }
+  let extra = false;
+  if (a.i === 9){
+    if (!S.dbl) return false;
+    const k = S.die + S.boost;
+    for (const i of [0, 1]){ if (S.frozen[me].includes(i)) continue; const r = reach(S, me, S.pos[me][i], k, true)[0]; if (r) extra = land(S, me, i, r) || extra; }
+  } else {
+    if (S.dbl) return false;
+    const opt = options(S).find(o => o.i === a.i && o.to === a.to); if (!opt) return false;
+    extra = land(S, me, a.i, opt);
   }
-  // bump: landing on an opponent piece (not on start, finish or a safe 🌳 square)
-  const at = P[a.i];
-  if (at > 0 && at < END && SPECIAL[at] !== 'safe'){
-    S.pos[op].forEach((q, j) => { if (q === at){ if (!useShield(S, op)){ S.pos[op][j] = Math.max(0, q - BUMP); ev(S, 'bumped', me, op, j); S.fx.push({t:'💥', at}); } } });
-  }
-  if (S.pos[me].every(q => q >= END)){ S.winner = me; ev(S, 'won', me); return true; }
-  if (extra && S.die === 6 && SPECIAL[at] !== 'carrot') ev(S, 'six', me);
+  if (S.pos[me].every(isHome)){ S.winner = me; ev(S, 'won', me); return true; }
+  if (S.die === 6 && S.natural && !extra){ extra = true; ev(S, 'six', me); }
   endTurn(S, extra);
   return true;
 }
@@ -250,45 +335,55 @@ const T = {
   setupNote:'你有两只 🐰，对方有两只 🦊。开始后把邀请链接发给对方，两个人在各自手机上同时看到同一条赛道。', start:'开始', rematch:'再来一局 🔁', copy:'📋 复制链接',
   invTitle:'把这个链接发给对方', invNote:'对方打开后自动成为 🦊，只需要发一次。', gotIt:'知道了',
   roll:'🎲 掷骰子', notYour:n=>`等 ${n}…`, youTurn:'轮到你了！可以先出一张卡，再掷骰子', you:'你', here:'在线', away:'不在',
-  cards:n=>`手牌 ${n}`, shielded:'🛡️', home:n=>`到家 ${n}/2`, won:n=>`🏆 ${n} 两只都到家了，赢了！`, waitingFor:n=>`等 ${n} 行动`,
-  pickHint:'选一只来走（蓝圈是落点）', remoteHint:'遥控骰子：你想走几步？', placeHint:c=>`点一个蓝色格子放 ${c}（再点一次卡片取消）`, noCards:'没有手牌，踩到 🎁 可以抽',
-  piece:(ic,i)=>`${ic}${'①②'[i]}`, cant:'走不了', toHome:'🏁 到家', swapSide:n=>`身份不对？我其实是 ${n}`, myLink:'📋 复制我自己的链接', swapped:n=>`好的，现在你是 ${n}`, myCopied:'已复制你自己的链接，换手机或换浏览器时用它打开',
-  card:{banana:['🍌','香蕉皮','放在对方前面，谁踩到谁退 3 格'], wall:['🧱','路障','放在对方前面，谁走到这里都得停下'], remote:['🎯','遥控骰子','这次不掷，自己选 1 到 6'], boost:['💨','加速','这次骰子 +2'], shield:['🛡️','护盾','被动：挡掉下一次倒霉事（包括被撞）']},
-  sq:{carrot:'🥕 再来一回合', hole:'🕳️ 掉坑，退 3 格', gift:'🎁 抽一张卡', rocket:'🚀 向前冲 3 格'},
-  ev:{rolled:(n,d,b)=>`${n} 掷出 ${DICE[d-1]}${b ? ' +2' : ''}`, remote:(n,d)=>`${n} 用遥控骰子选了 ${d}`, played:(n,c)=>`${n} 出了 ${c}`, placed:(c,sq)=>`${c} 放在了第 ${sq} 格`,
+  cards:n=>`手牌 ${n}`, shielded:'🛡️', won:n=>`🏆 ${n} 两只都到家了，赢了！`, waitingFor:n=>`等 ${n} 行动`,
+  pickHint:'选一个落点（蓝圈走大路，紫圈走 🌉 小桥）', remoteHint:'遥控骰子：你想走几步？', placeHint:c=>`点一个发光的格子使用 ${c}（再点一次卡片取消）`, noCards:'没有手牌，踩到 🎁 可以抽',
+  piece:(ic,i)=>`${ic}${'①②'[i]}`, toHome:'🏁 到家', viaBridge:'🌉 走小桥', both:k=>`👯 两只一起走 ${k} 步`, rerollNow:'🔁 不满意？用重掷卡', snailBadge:'🐌 下次减半', frozenBadge:'🧊',
+  swapSide:n=>`身份不对？我其实是 ${n}`, myLink:'📋 复制我自己的链接', swapped:n=>`好的，现在你是 ${n}`, myCopied:'已复制你自己的链接，换手机或换浏览器时用它打开',
+  noRoom:'现在没有可以用的目标',
+  card:{banana:['🍌','香蕉皮','放在对方前面，谁踩到谁退 3 格'], wall:['🧱','路障','放在对方前面，谁走到这里都得停下'], remote:['🎯','遥控骰子','这次不掷，自己选 1 到 6'], boost:['💨','加速','这次骰子 +2'], shield:['🛡️','护盾','被动：挡掉下一次倒霉事'],
+        hook:['🪝','钩子','把对方一只往回拉 3 格'], snail:['🐌','蜗牛','对方下一次掷骰子减半'], freeze:['🧊','冰冻','冻住对方一只，下回合不能动'], double:['👯','双人行','这次两只一起走'], reroll:['🔁','重掷','掷完不满意，再掷一次']},
+  sq:{carrot:'🥕 再来一回合', hole:'🕳️ 掉坑，退 3 格', gift:'🎁 抽一张卡', rocket:'🚀 向前冲 3 格', bridge:'🌉 小桥晃了一下，掉下去退 3 格'},
+  ev:{rolled:(n,d,b)=>`${n} 掷出 ${DICE[d-1]}${b ? ' +2' : ''}`, remote:(n,d)=>`${n} 用遥控骰子选了 ${d}`, played:(n,c)=>`${n} 出了 ${c}`, placed:(c,sq)=>`${c} 放好了`,
        shield:n=>`🛡️ ${n} 的护盾挡住了！`, slipped:n=>`🍌 ${n} 踩到香蕉皮，退 3 格！`, walled:n=>`🧱 ${n} 被路障拦住了`, handFull:'手牌满了（最多 3 张），没抽到', drew:c=>`抽到了 ${c}`,
-       extra:n=>`${n} 再来一回合！`, six:n=>`掷到 6，${n} 再来一次！`, noMove:n=>`${n} 没有能走的（要正好掷到终点才能进），跳过`, home:(n,ic)=>`🏁 ${n} 的 ${ic} 到家了！`, bumped:(n,m,ic)=>`💥 ${n} 撞飞了 ${m} 的 ${ic}，退 6 格！`},
-  rulesHtml:`<h2>目标</h2><ul><li>每人有<b>两只</b>，两只都到 🏁 才算赢</li><li>进终点要<b>正好</b>掷到那个数，多了就走不了</li></ul>
-   <h2>每回合</h2><ul><li>可以先出<b>一张</b>卡（不出也行）</li><li>掷一颗骰子，<b>选一只</b>来走。蓝圈会显示每只的落点</li><li>掷到 ⚅ 再来一次</li></ul>
-   <h2>撞人 💥</h2><ul><li>正好停在对方那只的格子上，就把它<b>撞回去 6 格</b></li><li>🌳 是安全格，停在上面不会被撞</li></ul>
-   <h2>格子</h2><ul><li>🥕 再来一回合</li><li>🎁 抽一张卡（最多 3 张）</li><li>🚀 向前冲 3 格</li><li>🕳️ 掉坑，退 3 格</li><li>🌳 安全格</li></ul>
-   <h2>卡片</h2><ul><li>🍌 香蕉皮：放在对方任意一只前面 1 到 6 格，<b>谁</b>踩到谁退 3 格</li><li>🧱 路障：同样放在对方前面，谁走到这里都得停下，然后路障消失</li><li>🎯 遥控骰子：这次不掷，自己选 1 到 6</li><li>💨 加速：这次骰子 +2</li><li>🛡️ 护盾：放在手里就生效，挡掉下一次坑、香蕉皮、路障或被撞</li></ul>`},
+       six:n=>`掷到 6，${n} 再来一次！`, noMove:n=>`${n} 没有能走的，跳过`, home:(n,ic)=>`🏁 ${n} 的 ${ic} 到家了！`, bumped:(n,m,ic)=>`💥 ${n} 撞飞了 ${m} 的 ${ic}，退 6 格！`,
+       hooked:(m,ic)=>`🪝 ${m} 的 ${ic} 被拉回 3 格`, frozen:(m,ic)=>`🧊 ${m} 的 ${ic} 被冻住了`, snailed:m=>`🐌 ${m} 下一次掷骰子要减半`, slowed:(n,d)=>`🐌 减半后只能走 ${d}`, rerolled:(n,d)=>`🔁 ${n} 重掷出 ${DICE[d-1]}`},
+  rulesHtml:`<h2>目标</h2><ul><li>每人有<b>两只</b>，两只都到 🏁 才算赢</li><li>进终点要<b>正好</b>掷到那个数</li></ul>
+   <h2>每回合</h2><ul><li>可以先出<b>一张</b>卡（不出也行）</li><li>掷一颗骰子，然后在赛道上<b>点一个落点</b>：蓝圈走大路，紫圈走 🌉 小桥</li><li>掷到 ⚅ 再来一次</li></ul>
+   <h2>🌉 小桥近路</h2><ul><li>赛道上有两座小桥，能少走 4 格</li><li>但<b>正好停在桥上</b>会掉下去退 3 格，而且小桥会错过路上的 🎁 和 🌳</li></ul>
+   <h2>撞人 💥</h2><ul><li>正好停在对方的格子上，把它<b>撞回去 6 格</b>。🌳 安全格上不会被撞</li></ul>
+   <h2>格子</h2><ul><li>🥕 再来一回合　🎁 抽卡（最多 3 张）　🚀 冲 3 格　🕳️ 退 3 格　🌳 安全</li></ul>
+   <h2>卡片（10 种）</h2><ul><li>🍌 香蕉皮、🧱 路障：放在对方前面</li><li>🪝 钩子：把对方一只拉回 3 格</li><li>🧊 冰冻：对方一只下回合不能动</li><li>🐌 蜗牛：对方下次掷骰子减半</li><li>🎯 遥控骰子：自己选 1 到 6</li><li>💨 加速：这次 +2</li><li>👯 双人行：这次两只一起走</li><li>🔁 重掷：<b>掷完以后</b>才能用，再掷一次</li><li>🛡️ 护盾：放在手里就生效，挡掉下一次坑、香蕉皮、路障、被撞、钩子、冰冻或蜗牛</li></ul>`},
  en: {title:'🐰 Bunny Race', rules:'Rules', newG:'New game', lang:'中文', newGame:'New game', yourName:'Your name', theirName:'Their name', whoFirst:'Who goes first?', me:'Me', them:'Them',
   setupNote:'You have two 🐰, they have two 🦊. Send them the invite link and you both see the same track live on your own phones.', start:'Start', rematch:'Rematch 🔁', copy:'📋 Copy link',
   invTitle:'Send this link to your partner', invNote:'Opening it puts them on the 🦊 side. You only need to send it once.', gotIt:'Got it',
   roll:'🎲 Roll', notYour:n=>`Waiting for ${n}…`, youTurn:'Your turn! Play a card if you like, then roll', you:'you', here:'here', away:'away',
-  cards:n=>`${n} card${n===1?'':'s'}`, shielded:'🛡️', home:n=>`home ${n}/2`, won:n=>`🏆 ${n} got both home and wins!`, waitingFor:n=>`Waiting for ${n}`,
-  pickHint:'Pick which one moves (blue rings show where they land)', remoteHint:'Remote dice: how far do you want to go?', placeHint:c=>`Tap a blue square to place ${c} (tap the card again to cancel)`, noCards:'No cards. Land on 🎁 to draw',
-  piece:(ic,i)=>`${ic}${'①②'[i]}`, cant:"can't move", toHome:'🏁 home', swapSide:n=>`Wrong side? I'm actually ${n}`, myLink:'📋 Copy my own link', swapped:n=>`OK, you are now ${n}`, myCopied:'Copied your own link. Use it to open the game on another phone or browser',
-  card:{banana:['🍌','Banana','Place ahead of them. Whoever lands on it goes back 3'], wall:['🧱','Roadblock','Place ahead of them. Anyone reaching it must stop'], remote:['🎯','Remote dice','No roll: choose 1 to 6'], boost:['💨','Boost','+2 on this roll'], shield:['🛡️','Shield','Passive: cancels your next bad luck, even a bump']},
-  sq:{carrot:'🥕 Another turn', hole:'🕳️ Hole, back 3', gift:'🎁 Draw a card', rocket:'🚀 Zoom 3 ahead'},
-  ev:{rolled:(n,d,b)=>`${n} rolled ${DICE[d-1]}${b ? ' +2' : ''}`, remote:(n,d)=>`${n} used the remote: ${d}`, played:(n,c)=>`${n} played ${c}`, placed:(c,sq)=>`${c} placed on square ${sq}`,
+  cards:n=>`${n} card${n===1?'':'s'}`, shielded:'🛡️', won:n=>`🏆 ${n} got both home and wins!`, waitingFor:n=>`Waiting for ${n}`,
+  pickHint:'Pick a landing spot (blue = main road, purple = 🌉 bridge)', remoteHint:'Remote dice: how far do you want to go?', placeHint:c=>`Tap a glowing square to use ${c} (tap the card again to cancel)`, noCards:'No cards. Land on 🎁 to draw',
+  piece:(ic,i)=>`${ic}${'①②'[i]}`, toHome:'🏁 home', viaBridge:'🌉 bridge', both:k=>`👯 Move both ${k}`, rerollNow:'🔁 Not happy? Use reroll', snailBadge:'🐌 next roll halved', frozenBadge:'🧊',
+  swapSide:n=>`Wrong side? I'm actually ${n}`, myLink:'📋 Copy my own link', swapped:n=>`OK, you are now ${n}`, myCopied:'Copied your own link. Use it to open the game on another phone or browser',
+  noRoom:'No valid target right now',
+  card:{banana:['🍌','Banana','Place ahead of them. Whoever lands on it goes back 3'], wall:['🧱','Roadblock','Place ahead of them. Anyone reaching it must stop'], remote:['🎯','Remote dice','No roll: choose 1 to 6'], boost:['💨','Boost','+2 on this roll'], shield:['🛡️','Shield','Passive: cancels your next bad luck'],
+        hook:['🪝','Hook','Pull one of theirs back 3'], snail:['🐌','Snail','Their next roll is halved'], freeze:['🧊','Freeze','One of theirs can\'t move next turn'], double:['👯','Double','Both of yours move this turn'], reroll:['🔁','Reroll','After rolling: roll again']},
+  sq:{carrot:'🥕 Another turn', hole:'🕳️ Hole, back 3', gift:'🎁 Draw a card', rocket:'🚀 Zoom 3 ahead', bridge:'🌉 The bridge wobbled, fell off, back 3'},
+  ev:{rolled:(n,d,b)=>`${n} rolled ${DICE[d-1]}${b ? ' +2' : ''}`, remote:(n,d)=>`${n} used the remote: ${d}`, played:(n,c)=>`${n} played ${c}`, placed:(c,sq)=>`${c} is down`,
        shield:n=>`🛡️ ${n}'s shield saved them!`, slipped:n=>`🍌 ${n} slipped, back 3!`, walled:n=>`🧱 ${n} hit the roadblock`, handFull:'Hand full (max 3), no card', drew:c=>`drew ${c}`,
-       extra:n=>`${n} takes another turn!`, six:n=>`A six! ${n} goes again!`, noMove:n=>`${n} can't move (you need the exact roll to get home), turn skipped`, home:(n,ic)=>`🏁 ${n}'s ${ic} is home!`, bumped:(n,m,ic)=>`💥 ${n} bumped ${m}'s ${ic} back 6!`},
+       six:n=>`A six! ${n} goes again!`, noMove:n=>`${n} can't move, turn skipped`, home:(n,ic)=>`🏁 ${n}'s ${ic} is home!`, bumped:(n,m,ic)=>`💥 ${n} bumped ${m}'s ${ic} back 6!`,
+       hooked:(m,ic)=>`🪝 ${m}'s ${ic} got pulled back 3`, frozen:(m,ic)=>`🧊 ${m}'s ${ic} is frozen`, snailed:m=>`🐌 ${m}'s next roll will be halved`, slowed:(n,d)=>`🐌 halved: only ${d}`, rerolled:(n,d)=>`🔁 ${n} rerolled ${DICE[d-1]}`},
   rulesHtml:`<h2>Goal</h2><ul><li>You each have <b>two</b>. Get both to 🏁 to win</li><li>You need the <b>exact</b> roll to get home</li></ul>
-   <h2>Each turn</h2><ul><li>Optionally play <b>one</b> card</li><li>Roll one die and <b>choose which one</b> moves. Blue rings show where each would land</li><li>Roll a ⚅ and you go again</li></ul>
-   <h2>Bumping 💥</h2><ul><li>Land exactly on one of theirs and it's <b>knocked back 6</b></li><li>🌳 squares are safe, nobody can be bumped there</li></ul>
-   <h2>Squares</h2><ul><li>🥕 Another turn</li><li>🎁 Draw a card (max 3)</li><li>🚀 Zoom 3 ahead</li><li>🕳️ Hole, back 3</li><li>🌳 Safe</li></ul>
-   <h2>Cards</h2><ul><li>🍌 Banana: place 1 to 6 ahead of either of theirs. <b>Anyone</b> landing on it goes back 3</li><li>🧱 Roadblock: place ahead of them. Anyone reaching it stops, then it's gone</li><li>🎯 Remote dice: no roll, choose 1 to 6</li><li>💨 Boost: +2 on this roll</li><li>🛡️ Shield: held = active. Cancels your next hole, banana, roadblock or bump</li></ul>`}
+   <h2>Each turn</h2><ul><li>Optionally play <b>one</b> card</li><li>Roll one die, then <b>tap a landing spot</b>: blue rings follow the main road, purple rings take a 🌉 bridge</li><li>Roll a ⚅ and you go again</li></ul>
+   <h2>🌉 Bridge shortcuts</h2><ul><li>Two bridges each save 4 squares</li><li>But <b>stopping on a bridge</b> drops you back 3, and you skip the 🎁 and 🌳 on the long way</li></ul>
+   <h2>Bumping 💥</h2><ul><li>Land exactly on one of theirs to knock it <b>back 6</b>. Nobody can be bumped on 🌳</li></ul>
+   <h2>Squares</h2><ul><li>🥕 another turn · 🎁 draw (max 3) · 🚀 zoom 3 · 🕳️ back 3 · 🌳 safe</li></ul>
+   <h2>Cards (10 kinds)</h2><ul><li>🍌 Banana, 🧱 Roadblock: place ahead of them</li><li>🪝 Hook: pull one of theirs back 3</li><li>🧊 Freeze: one of theirs can't move next turn</li><li>🐌 Snail: their next roll is halved</li><li>🎯 Remote: choose 1 to 6</li><li>💨 Boost: +2</li><li>👯 Double: both of yours move</li><li>🔁 Reroll: use <b>after</b> rolling</li><li>🛡️ Shield: held = active. Cancels your next hole, banana, roadblock, bump, hook, freeze or snail</li></ul>`}
 };
 let LANG = localStorage.getItem('race-lang') || 'zh';
 const t = k => T[LANG][k];
 const ICON = [null, '🐰', '🦊'];
 let nm = [null, 'A', 'B'];
-const SQ_ICON = {carrot:'🥕', gift:'🎁', hole:'🕳️', rocket:'🚀', safe:'🌳'};
+const SQ_ICON = {carrot:'🥕', gift:'🎁', hole:'🕳️', rocket:'🚀', safe:'🌳', bridge:'🌉'};
 const ITEM_ICON = {banana:'🍌', wall:'🧱'};
 function evHookFn(key, ...a){
-  const E = T[LANG].ev, C = T[LANG].card, cn = c => C[c][0] + ' ' + C[c][1];
+  const E = T[LANG].ev, C = T[LANG].card, cn = c => C[c][0] + ' ' + C[c][1], pc = (p, i) => t('piece')(ICON[p], i);
   switch (key){
     case 'rolled': return E.rolled(nm[a[0]], a[1], a[2]);
     case 'remote': return E.remote(nm[a[0]], a[1]);
@@ -299,11 +394,15 @@ function evHookFn(key, ...a){
     case 'walled': return E.walled(nm[a[0]]);
     case 'handFull': return E.handFull;
     case 'drew': return E.drew(cn(a[0]));
-    case 'extra': return E.extra(nm[a[0]]);
     case 'six': return E.six(nm[a[0]]);
     case 'noMove': return E.noMove(nm[a[0]]);
-    case 'home': return E.home(nm[a[0]], t('piece')(ICON[a[0]], a[1]));
-    case 'bumped': return E.bumped(nm[a[0]], nm[a[1]], t('piece')(ICON[a[1]], a[2]));
+    case 'home': return E.home(nm[a[0]], pc(a[0], a[1]));
+    case 'bumped': return E.bumped(nm[a[0]], nm[a[1]], pc(a[1], a[2]));
+    case 'hooked': return E.hooked(nm[a[0]], pc(a[0], a[1]));
+    case 'frozen': return E.frozen(nm[a[0]], pc(a[0], a[1]));
+    case 'snailed': return E.snailed(nm[a[0]]);
+    case 'slowed': return E.slowed(nm[a[0]], a[1]);
+    case 'rerolled': return E.rerolled(nm[a[0]], a[1]);
     case 'sq': return T[LANG].sq[a[0]];
     case 'won': return T[LANG].won(nm[a[0]]);
   }
@@ -312,7 +411,7 @@ function evHookFn(key, ...a){
 evHook = evHookFn;
 
 // ================= encoding =================
-const encA = a => a.t === 'C' ? 'C' + a.i + String(a.sq || 0).padStart(2, '0') : a.t === 'R' ? 'R' + a.d + a.x : a.t === 'N' ? 'N' + a.v : 'M' + a.i;
+const encA = a => a.t === 'C' ? 'C' + a.i + String(a.sq ?? 0).padStart(2, '0') : a.t === 'R' ? 'R' + a.d + a.x : a.t === 'N' ? 'N' + a.v : 'M' + a.i + String(a.to < 0 ? 0 : a.to).padStart(2, '0');
 function decLog(s){
   const out = []; let k = 0;
   while (k < s.length){
@@ -320,7 +419,7 @@ function decLog(s){
     if (c === 'C' && /^[0-2]\d\d$/.test(s.substr(k+1, 3))){ out.push({t:'C', i:+s[k+1], sq:+s.substr(k+2, 2)}); k += 4; }
     else if (c === 'R' && /^[0-5]\d$/.test(s.substr(k+1, 2))){ out.push({t:'R', d:+s[k+1], x:+s[k+2]}); k += 3; }
     else if (c === 'N' && /[1-6]/.test(s[k+1] || '')){ out.push({t:'N', v:+s[k+1]}); k += 2; }
-    else if (c === 'M' && /[01]/.test(s[k+1] || '')){ out.push({t:'M', i:+s[k+1]}); k += 2; }
+    else if (c === 'M' && /^[019]\d\d$/.test(s.substr(k+1, 3))){ const i = +s[k+1]; out.push({t:'M', i, to:i === 9 ? -1 : +s.substr(k+2, 2)}); k += 4; }
     else break;
   }
   return out;
@@ -333,15 +432,15 @@ const rndId = n => Array.from(crypto.getRandomValues(new Uint8Array(n)), x => 'a
 let G = null, S = null, mySide = 0, shown = null, animT = null, armed = -1;
 function replay(){ nm = [null, esc(G.a), esc(G.b)]; S = initState(G); const ok = []; for (const a of G.log){ if (step(S, a)) ok.push(a); else break; } G.log = ok; }
 function link(forSide = 0){
-  const p = new URLSearchParams({id:G.id, a:G.a, b:G.b, f:G.first, h:G.h.join(''), l:G.log.map(encA).join(''), r:G.room, v:3});
+  const p = new URLSearchParams({id:G.id, a:G.a, b:G.b, f:G.first, h:G.h.join(''), l:G.log.map(encA).join(''), r:G.room, v:4});
   if (forSide) p.set('p', forSide);
   return location.origin + location.pathname + '#' + p.toString();
 }
 function readHash(){
   const p = new URLSearchParams(location.hash.slice(1));
   if (!p.get('id') || !/^[A-Za-z0-9_-]{8,64}$/.test(p.get('r') || '')) return null;
-  if (p.get('v') !== '3') return 'old';
-  const h = (p.get('h') || '00').split('').map(Number).map(x => x >= 0 && x < 5 ? x : 0);
+  if (p.get('v') !== '4') return 'old';
+  const h = (p.get('h') || '00').split('').map(Number).map(x => x >= 0 && x < 10 ? x : 0);
   return {id:p.get('id'), a:p.get('a') || 'P1', b:p.get('b') || 'P2', first:+p.get('f') === 2 ? 2 : 1, h:[h[0]||0, h[1]||0], log:decLog(p.get('l') || ''), room:p.get('r'), invited:+p.get('p') || 0};
 }
 const copyPos = P => [null, P[1].slice(), P[2].slice()];
@@ -403,52 +502,74 @@ function buzz(){ try { navigator.vibrate && navigator.vibrate(60); } catch {} }
 
 
 // ================= UI =================
-const COLS = 8, ROWS = (END + 1) / COLS;
-function cellOf(i){ const row = Math.floor(i / COLS), col = row % 2 === 0 ? i % COLS : COLS - 1 - (i % COLS); return (ROWS - 1 - row) * COLS + col; }
+const COLS = 8, ROWS = 7;
+const gridOf = n => NODE_RC[n][0] * COLS + NODE_RC[n][1];
+// undirected path between two nodes, for step-by-step animation (bridges included)
+const ADJ = (() => { const a = [...Array(NODES)].map(() => []); NEXT.forEach((ns, i) => (ns || []).forEach(j => { a[i].push(j); a[j].push(i); })); return a; })();
+function pathBetween(a, b){
+  if (a === b) return [];
+  const prev = new Map([[a, -1]]), q = [a];
+  while (q.length){ const n = q.shift(); if (n === b) break; for (const m of ADJ[n]) if (!prev.has(m)){ prev.set(m, n); q.push(m); } }
+  if (!prev.has(b)) return [b];
+  const out = []; for (let n = b; n !== a; n = prev.get(n)) out.unshift(n); return out;
+}
+let queue = null;   // queue[p][i] = remaining nodes to hop through
 function animateTo(){
+  if (!queue) queue = [null, [[], []], [[], []]];
+  for (const p of [1, 2]) for (const i of [0, 1]){
+    const last = queue[p][i].length ? queue[p][i][queue[p][i].length - 1] : shown[p][i];
+    if (last !== S.pos[p][i]) queue[p][i].push(...pathBetween(last, S.pos[p][i]));
+  }
   clearInterval(animT);
   animT = setInterval(() => {
-    let moving = false;
-    hopSet = new Set();
-    for (const p of [1, 2]) for (const i of [0, 1]) if (shown[p][i] !== S.pos[p][i]){ shown[p][i] += Math.sign(S.pos[p][i] - shown[p][i]); moving = true; hopSet.add(p + ':' + i); }
+    let moving = false; hopSet = new Set();
+    for (const p of [1, 2]) for (const i of [0, 1]) if (queue[p][i].length){ shown[p][i] = queue[p][i].shift(); moving = true; hopSet.add(p + ':' + i); }
     drawBoard();
     if (!moving){ clearInterval(animT); hopSet = new Set(); drawBoard(); }
-  }, 90);
+  }, 95);
 }
 let hopSet = new Set();
 function roadSVG(){
-  const pts = [];
-  for (let i = 0; i <= END; i++){ const g = cellOf(i), c = g % COLS, rr = Math.floor(g / COLS); pts.push(`${c * 100 + 50},${rr * 100 + 50}`); }
-  const pl = pts.join(' ');
-  return `<svg class="road" viewBox="0 0 ${COLS * 100} ${ROWS * 100}" preserveAspectRatio="none"><polyline points="${pl}" fill="none" stroke="#b8925a" stroke-width="64" stroke-linejoin="round" stroke-linecap="round" opacity=".55"/><polyline points="${pl}" fill="none" stroke="#e8cc98" stroke-width="52" stroke-linejoin="round" stroke-linecap="round"/><polyline points="${pl}" fill="none" stroke="#fff6" stroke-width="4" stroke-dasharray="10 16" stroke-linejoin="round"/></svg>`;
+  const xy = n => { const [r, c] = NODE_RC[n]; return `${c * 100 + 50},${r * 100 + 50}`; };
+  const main = [...Array(END + 1).keys()].map(xy).join(' ');
+  const br = [[14, 35, 20], [23, 36, 29]].map(s => s.map(xy).join(' '));
+  const line = (pts, w, col, extra = '') => `<polyline points="${pts}" fill="none" stroke="${col}" stroke-width="${w}" stroke-linejoin="round" stroke-linecap="round" ${extra}/>`;
+  return `<svg class="road" viewBox="0 0 ${COLS * 100} ${ROWS * 100}" preserveAspectRatio="none">
+    ${br.map(p => line(p, 40, '#7a5a34', 'opacity=".55"') + line(p, 30, '#c79a63') + line(p, 30, '#8a643a', 'stroke-dasharray="6 9"')).join('')}
+    ${line(main, 66, '#b8925a', 'opacity=".5"')}${line(main, 54, '#e8cc98')}${line(main, 4, '#fff7', 'stroke-dasharray="10 16"')}</svg>`;
 }
+const DECO = ['🌼','🌷','🍄','🌿','🪨','🌸','🐞','🌱'];
 function drawBoard(){
   const myTurn = !S.winner && S.turn === mySide;
-  const marks = {}, movable = new Set();
-  if (myTurn && S.phase === 'pick') options(S).forEach((o, i) => { if (o){ (marks[o.to] = marks[o.to] || []).push('①②'[i]); movable.add(i); } });
-  const targets = myTurn && armed >= 0 ? validTargets(S, mySide) : [];
+  const marks = {};
+  if (myTurn && S.phase === 'pick' && !S.dbl) options(S).forEach(o => { (marks[o.to] = marks[o.to] || []).push(o); });
+  const armedCard = armed >= 0 ? S.hand[mySide][armed] : null;
+  const targets = myTurn && armedCard ? validTargets(S, mySide, armedCard) : [];
   const toks = {};
-  for (const p of [1, 2]) for (const i of [0, 1]){ const q = Math.min(END, shown[p][i]); (toks[q] = toks[q] || []).push([p, i]); }
-  const cells = [];
-  for (let i = 0; i <= END; i++){
-    const sp = SPECIAL[i];
-    const label = i === 0 ? '🏠' : i === END ? '🏁' : sp ? SQ_ICON[sp] : '';
-    const cls = ['sq', i === 0 ? 'start' : i === END ? 'end' : '', sp || '', targets.includes(i) ? 'target' : ''].join(' ');
-    const list = toks[i] || [];
-    const tk = list.map(([p, j], n) => {
-      const c = ['tok', 'p' + p, list.length === 1 ? 'solo' : 'k' + n];
+  for (const p of [1, 2]) for (const i of [0, 1]){ const q = shown[p][i]; (toks[q] = toks[q] || []).push([p, i]); }
+  const cells = Array(COLS * ROWS).fill(null);
+  for (let n = 0; n < NODES; n++){
+    const sp = SPECIAL[n];
+    const label = n === 0 ? '🏠' : n === END ? '🏁' : sp ? SQ_ICON[sp] : '';
+    const cls = ['sq', n === 0 ? 'start' : n === END ? 'end' : '', sp || '', targets.includes(n) ? 'target' : '', marks[n] ? 'choice' : ''].join(' ');
+    const list = toks[n] || [];
+    const tk = list.map(([p, j], k) => {
+      const c = ['tok', 'p' + p, list.length === 1 ? 'solo' : 'k' + k];
       if (hopSet.has(p + ':' + j)) c.push('hop');
-      if (p === mySide && movable.has(j)) c.push('mine', 'ready');
+      if (S.frozen[p].includes(j)) c.push('frozen');
+      if (p === mySide && myTurn && S.phase === 'pick' && (S.dbl || (marks && options(S).some(o => o.i === j)))) c.push('ready');
       return `<span class="${c.join(' ')}">${ICON[p]}<i>${j + 1}</i></span>`;
     }).join('');
-    cells[cellOf(i)] = `<div class="${cls}" data-i="${i}"><div class="stone"><span class="lb">${label}</span></div><span class="num">${i || ''}</span>${S.items[i] ? `<span class="item">${ITEM_ICON[S.items[i]]}</span>` : ''}${marks[i] ? `<span class="mark"><b>${marks[i].join('')}</b></span>` : ''}${tk}</div>`;
+    const mk = marks[n] ? `<span class="mark ${marks[n].every(o => o.via) ? 'via' : ''}"><b>${marks[n].map(o => o.i + 1).join('')}</b></span>` : '';
+    cells[gridOf(n)] = `<div class="${cls}" data-n="${n}"><div class="stone"><span class="lb">${label}</span></div>${S.items[n] ? `<span class="item">${ITEM_ICON[S.items[n]]}</span>` : ''}${mk}${tk}</div>`;
   }
+  for (let g = 0; g < cells.length; g++) if (!cells[g]) cells[g] = `<div class="sq deco"><span>${(g * 7 + 3) % 5 === 0 ? DECO[g % DECO.length] : ''}</span></div>`;
   $('board').innerHTML = roadSVG() + cells.join('');
 }
 function renderDie(v, plus, rolling){
   const PIPS = {1:[4],2:[0,8],3:[0,4,8],4:[0,2,6,8],5:[0,2,4,6,8],6:[0,2,3,5,6,8]};
   const on = new Set(PIPS[v] || []);
-  const el = $('die');
+  const el = $('die'); if (!el) return;
   el.innerHTML = [...Array(9)].map((_, k) => `<i class="${on.has(k) ? 'on' : ''}"></i>`).join('') + (plus ? `<span class="plus">+${plus}</span>` : '');
   if (rolling){ el.classList.remove('rolling'); void el.offsetWidth; el.classList.add('rolling'); }
 }
@@ -458,7 +579,7 @@ function rollAnim(final, plus){
 }
 function bursts(fx){
   (fx || []).forEach((f, n) => setTimeout(() => {
-    const cell = document.querySelector(`.sq[data-i="${f.at}"]`); if (!cell) return;
+    const cell = document.querySelector(`.sq[data-n="${f.at}"]`); if (!cell) return;
     const b = document.createElement('span'); b.className = 'burst'; b.textContent = f.t; cell.appendChild(b);
     setTimeout(() => b.remove(), 900);
     if (f.t === '💥' && navigator.vibrate) try { navigator.vibrate([40, 30, 40]); } catch {}
@@ -475,10 +596,14 @@ function confetti(){
   }
 }
 $('board').onclick = e => {
-  const sq = e.target.closest('.sq'); if (!sq) return;
-  const i = +sq.dataset.i;
-  if (armed >= 0){ if (validTargets(S, mySide).includes(i)) act({t:'C', i:armed, sq:i}); return; }
-  if (!S.winner && S.turn === mySide && S.phase === 'pick'){ const o = options(S); const k = o.findIndex(x => x && x.to === i); if (k >= 0) act({t:'M', i:k}); }
+  const sq = e.target.closest('.sq'); if (!sq || sq.dataset.n == null) return;
+  const n = +sq.dataset.n;
+  if (armed >= 0){ const c = S.hand[mySide][armed]; if (validTargets(S, mySide, c).includes(n)) act({t:'C', i:armed, sq:n}); return; }
+  if (!S.winner && S.turn === mySide && S.phase === 'pick' && !S.dbl){
+    const os = options(S).filter(o => o.to === n);
+    if (os.length === 1) act({t:'M', i:os[0].i, to:n});
+    else if (os.length > 1) toast(LANG === 'zh' ? '两只都能到这里，点下面的按钮选一只' : 'Both can land here, pick one with the buttons below');
+  }
 };
 function renderPresence(){
   if (!G) return; const op = other(mySide), on = Date.now() - lastSeen < 50000;
@@ -491,9 +616,10 @@ function render(){
   for (const p of [1, 2]){
     const bits = [];
     if (p === mySide) bits.push(t('you'));
-    const nh = S.pos[p].filter(q => q >= END).length;
+    const nh = S.pos[p].filter(isHome).length;
     bits.push(`🏁 <span class="homes"><i class="${nh > 0 ? 'on' : ''}"></i><i class="${nh > 1 ? 'on' : ''}"></i></span>`);
     bits.push(t('cards')(S.hand[p].length) + (S.hand[p].includes('shield') ? ' ' + t('shielded') : ''));
+    if (S.snail[p]) bits.push(t('snailBadge'));
     $('s' + p).innerHTML = bits.join(' · ') + (p !== mySide ? ` · <span id="pres${p}"></span>` : '');
     $('pl' + p).classList.toggle('turn', !S.winner && S.turn === p);
   }
@@ -503,27 +629,31 @@ function render(){
                      : S.events.length ? S.events.join('<br>') : (myTurn ? t('youTurn') : t('waitingFor')(esc(N[S.turn])));
   let hint = '';
   if (myTurn && armed >= 0) hint = t('placeHint')(C[S.hand[mySide][armed]][0]);
-  else if (myTurn && S.phase === 'pick') hint = t('pickHint');
+  else if (myTurn && S.phase === 'pick') hint = S.dbl ? '' : t('pickHint');
   else if (myTurn && S.phase === 'remote') hint = t('remoteHint');
   $('hint').textContent = hint;
-  const canCard = myTurn && S.phase === 'pre' && !S.used;
-  $('hand').innerHTML = S.hand[mySide].map((c, i) => `<button class="cardb ${c === 'shield' ? 'passive' : ''} ${armed === i ? 'armed' : ''}" data-i="${i}" ${!canCard || c === 'shield' ? 'disabled' : ''}><span class="e">${C[c][0]}</span><b>${C[c][1]}</b><br><span class="muted">${C[c][2]}</span></button>`).join('') || `<span class="empty">${t('noCards')}</span>`;
+  const usable = c => myTurn && !S.used && c !== 'shield' && (c === 'reroll' ? S.phase === 'pick' : S.phase === 'pre');
+  $('hand').innerHTML = S.hand[mySide].map((c, i) => `<button class="cardb ${c === 'shield' ? 'passive' : ''} ${armed === i ? 'armed' : ''} ${usable(c) && c === 'reroll' ? 'glow' : ''}" data-i="${i}" ${usable(c) ? '' : 'disabled'}><span class="e">${C[c][0]}</span><b>${C[c][1]}</b><br><span class="muted">${C[c][2]}</span></button>`).join('') || `<span class="empty">${t('noCards')}</span>`;
   document.querySelectorAll('.cardb').forEach(b => b.onclick = () => {
     const i = +b.dataset.i, c = S.hand[mySide][i];
-    if (TARGETED(c)){
-      if (!validTargets(S, mySide).length){ toast(LANG === 'zh' ? '对方前面没有地方放了' : 'No room ahead of them'); return; }
+    if (TARGET_AHEAD(c) || TARGET_RUNNER(c)){
+      if (!validTargets(S, mySide, c).length){ toast(t('noRoom')); return; }
       armed = armed === i ? -1 : i; render(); return;
     }
-    armed = -1; act({t:'C', i, sq:0});
+    armed = -1;
+    act({t:'C', i, sq: c === 'reroll' ? rndN(6) : 0});
   });
   const picks = $('picks');
   if (myTurn && S.phase === 'pick'){
-    const o = options(S);
-    picks.innerHTML = `<div class="die" id="die2"></div>` + [0, 1].map(i => `<button data-k="${i}" ${o[i] ? '' : 'disabled'}><span class="d">${t('piece')(ICON[mySide], i)}</span>${o[i] ? (o[i].to >= END ? t('toHome') : `${S.pos[mySide][i]} → ${o[i].to}`) : t('cant')}</button>`).join('');
-    picks.querySelectorAll('button').forEach(b => b.onclick = () => act({t:'M', i:+b.dataset.k}));
-    const d2 = $('die2'); const PIPS = {1:[4],2:[0,8],3:[0,4,8],4:[0,2,6,8],5:[0,2,4,6,8],6:[0,2,3,5,6,8]}; const on = new Set(PIPS[S.die]); d2.innerHTML = [...Array(9)].map((_, k) => `<i class="${on.has(k) ? 'on' : ''}"></i>`).join('') + (S.boost ? '<span class="plus">+2</span>' : '');
+    const os = options(S), k = S.die + S.boost;
+    const btns = S.dbl ? [`<button data-i="9" data-to="-1" class="wide">${t('both')(k)}</button>`]
+      : os.map(o => `<button data-i="${o.i}" data-to="${o.to}" class="${o.via ? 'via' : ''}"><span class="d">${t('piece')(ICON[mySide], o.i)}</span>${o.to === END ? t('toHome') : (o.via ? t('viaBridge') + ' ' : '') + '→ ' + o.to}</button>`);
+    picks.innerHTML = `<div class="die" id="die2"></div><div class="pbtns">${btns.join('')}</div>`;
+    picks.querySelectorAll('button').forEach(b => b.onclick = () => act({t:'M', i:+b.dataset.i, to:+b.dataset.to}));
+    const d2 = $('die2'); const PIPS = {1:[4],2:[0,8],3:[0,4,8],4:[0,2,6,8],5:[0,2,4,6,8],6:[0,2,3,5,6,8]}; const on = new Set(PIPS[S.die]);
+    d2.innerHTML = [...Array(9)].map((_, q) => `<i class="${on.has(q) ? 'on' : ''}"></i>`).join('') + (S.boost ? '<span class="plus">+2</span>' : '');
   } else if (myTurn && S.phase === 'remote'){
-    picks.innerHTML = [1,2,3,4,5,6].map(v => `<button data-v="${v}" class="rm"><span class="d">${DICE[v - 1]}</span></button>`).join('');
+    picks.innerHTML = `<div class="pbtns six">${[1,2,3,4,5,6].map(v => `<button data-v="${v}" class="rm"><span class="d">${DICE[v - 1]}</span></button>`).join('')}</div>`;
     picks.querySelectorAll('button').forEach(b => b.onclick = () => act({t:'N', v:+b.dataset.v}));
   }
   picks.classList.toggle('hidden', !(myTurn && (S.phase === 'pick' || S.phase === 'remote')));
@@ -563,9 +693,9 @@ async function copyLink(url){
 
 const sideKey = id => 'race-side-' + id;
 function startGame(a, b, first, side = 1, room = null){
-  G = {id:rndId(8), a, b, first, h:[rndN(5), rndN(5)], log:[], room:room || 'race-' + rndId(20)};
+  G = {id:rndId(8), a, b, first, h:[rndN(10), rndN(10)], log:[], room:room || 'race-' + rndId(20)};
   mySide = side; localStorage.setItem(sideKey(G.id), String(side)); armed = -1;
-  replay(); shown = copyPos(S.pos);
+  replay(); shown = copyPos(S.pos); queue = null;
   history.replaceState(null, '', link());
   show('game'); render(); renderDie(6, 0, false); liveConnect();
   if (!room) showInvite();
@@ -578,9 +708,9 @@ function load(){
   G = g; armed = -1;
   mySide = +(localStorage.getItem(sideKey(G.id)) || 0);
   if (!mySide){ mySide = g.invited === 1 || g.invited === 2 ? g.invited : 2; localStorage.setItem(sideKey(G.id), String(mySide)); }
-  replay(); shown = copyPos(S.pos);
+  replay(); shown = copyPos(S.pos); queue = null;
   history.replaceState(null, '', link());
-  show(localStorage.getItem('race-seen-rules-v3') ? 'game' : 'rules');
+  show(localStorage.getItem('race-seen-rules-v4') ? 'game' : 'rules');
   render(); renderDie(S.die || 6, 0, false); liveConnect();
   if (!G.log.length && mySide === 1) showInvite();
 }
@@ -604,7 +734,7 @@ $('bNew').onclick = () => { liveClose(); openSetup(); };
 $('bSwap').onclick = () => { if (!G) return; mySide = other(mySide); localStorage.setItem(sideKey(G.id), String(mySide)); armed = -1; toast(t('swapped')(ICON[mySide] + ' ' + (mySide === 1 ? G.a : G.b))); render(); ping(); };
 $('bMine').onclick = async () => { if (!G) return; const url = link(mySide); try { await navigator.clipboard.writeText(url); toast(t('myCopied')); } catch { $('invUrl').value = url; $('invite').classList.remove('hidden'); toast(LANG === 'zh' ? '长按上面的链接复制' : 'Tap and hold the link above to copy'); } };
 $('bRules').onclick = () => { applyLang(); show('rules'); };
-$('bRulesOk').onclick = () => { localStorage.setItem('race-seen-rules-v3', '1'); if (G){ show('game'); render(); } else openSetup(); };
+$('bRulesOk').onclick = () => { localStorage.setItem('race-seen-rules-v4', '1'); if (G){ show('game'); render(); } else openSetup(); };
 $('bLang').onclick = () => { LANG = LANG === 'zh' ? 'en' : 'zh'; localStorage.setItem('race-lang', LANG); if (G) replay(); applyLang(); if (G && !$('game').classList.contains('hidden')) render(); };
 window.addEventListener('hashchange', load);
 applyLang();
