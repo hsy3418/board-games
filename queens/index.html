@@ -1,0 +1,312 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#f6efe2">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="兔子布阵">
+<title>兔子布阵 Bunny Formation 🐰</title>
+<meta property="og:title" content="兔子布阵 Bunny Formation">
+<meta property="og:description" content="每天一题的逻辑谜题：每行、每列、每块颜色各放一只兔子，兔子不能挨着。">
+<style>
+:root{--ink:#2d2a24;--muted:#857b6a;--bg:#f6efe2;--card:#fffdf8;--accent:#e2702a;--green:#3f8a3a;--red:#e04848;--line:#3b342a}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{margin:0;font-family:ui-rounded,"SF Pro Rounded",-apple-system,"PingFang SC","Helvetica Neue",Arial,sans-serif;color:var(--ink);background:radial-gradient(circle at 15% 0,#fffaf0,transparent 40%),var(--bg);display:flex;justify-content:center;padding:env(safe-area-inset-top) 12px 30px;min-height:100vh}
+.wrap{width:100%;max-width:480px}
+header{display:flex;justify-content:space-between;align-items:center;padding:12px 0 6px}
+h1{font-size:21px;margin:0}
+button{font:inherit;cursor:pointer;border:none;border-radius:14px;color:inherit;transition:transform .08s}
+button:active:not(:disabled){transform:scale(.96)}
+.link{background:none;color:var(--muted);font-size:14px;padding:6px 4px}
+.meta{display:flex;justify-content:space-between;align-items:center;margin:6px 2px 10px;font-size:14px;color:var(--muted)}
+.meta b{color:var(--ink);font-size:16px}
+.pill{background:#fff;border-radius:12px;padding:4px 10px;box-shadow:0 2px 0 #0000000d}
+.grid{display:grid;user-select:none;-webkit-user-select:none;touch-action:none;border:3px solid var(--line);border-radius:12px;overflow:hidden;box-shadow:0 8px 20px #0000001f;background:var(--line)}
+.c{position:relative;aspect-ratio:1;display:flex;align-items:center;justify-content:center;font-size:min(7vw,32px);line-height:1}
+.c.bt{border-top:2.5px solid var(--line)}.c.bl{border-left:2.5px solid var(--line)}
+.c:not(.bt){border-top:1px solid #0000001f}.c:not(.bl){border-left:1px solid #0000001f}
+.c .x{font-size:.5em;color:#00000059;font-weight:700}
+.c.bad::after{content:"";position:absolute;inset:0;background:repeating-linear-gradient(45deg,#e0484833 0 6px,#e0484815 6px 12px)}
+.c.bad .bun{filter:drop-shadow(0 0 4px var(--red))}
+.c.flash{animation:flash .9s 2}
+.bun{animation:pop .22s;filter:drop-shadow(0 2px 1px #0004)}
+@keyframes pop{0%{transform:scale(.3)}70%{transform:scale(1.2)}100%{transform:scale(1)}}
+@keyframes flash{50%{box-shadow:inset 0 0 0 4px var(--accent)}}
+.grid.won .bun{animation:hopw .6s ease-in-out infinite alternate}
+@keyframes hopw{to{transform:translateY(-15%)}}
+.tools{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:14px}
+.tools button{background:#fff;padding:12px 4px;font-size:14px;box-shadow:0 3px 0 #0000001a}
+.tools button .e{display:block;font-size:20px}
+.toggle{display:flex;align-items:center;justify-content:center;gap:8px;margin-top:12px;font-size:14px;color:var(--muted)}
+.sw{width:44px;height:26px;border-radius:13px;background:#d9cfbd;position:relative;transition:background .2s}
+.sw::after{content:"";position:absolute;left:3px;top:3px;width:20px;height:20px;border-radius:50%;background:#fff;transition:left .2s;box-shadow:0 1px 2px #0003}
+.sw.on{background:var(--green)}.sw.on::after{left:21px}
+.help{font-size:13px;color:var(--muted);text-align:center;margin-top:10px;line-height:1.5}
+.card{background:var(--card);border-radius:18px;padding:16px 18px;margin-top:10px;line-height:1.6;font-size:15px;box-shadow:0 4px 0 #0000000f}
+.card h2{font-size:17px;margin:0 0 6px}
+.card ul{padding-left:18px;margin:6px 0}
+.big{width:100%;padding:15px;margin-top:14px;background:var(--green);color:#fff;font-size:17px;font-weight:700;box-shadow:0 5px 0 #2d6a29}
+.lv{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin:8px 0 14px}
+.lv button{background:#fff;padding:10px 0;font-size:15px;box-shadow:0 3px 0 #0000001a;position:relative}
+.lv button.done{background:#e3f3da}
+.lv button.done::after{content:"✓";position:absolute;right:4px;top:2px;font-size:11px;color:var(--green)}
+.lv button.cur{outline:3px solid var(--accent)}
+.daily{display:flex;gap:10px;align-items:center;background:linear-gradient(135deg,#fff,#ffe9d6);border-radius:16px;padding:14px;margin:6px 0 16px;box-shadow:0 4px 0 #f0c9a5;width:100%;text-align:left}
+.daily .e{font-size:30px}.daily small{display:block;color:var(--muted)}
+.overlay{position:fixed;inset:0;background:#0006;display:flex;align-items:center;justify-content:center;z-index:30;padding:20px}
+.modal{background:var(--card);border-radius:22px;padding:22px;max-width:360px;width:100%;text-align:center;box-shadow:0 20px 40px #0004;animation:pop .3s}
+.modal .e{font-size:54px}
+.modal h2{margin:6px 0}
+.stats{display:flex;justify-content:center;gap:18px;margin:12px 0;font-size:14px;color:var(--muted)}
+.stats b{display:block;font-size:22px;color:var(--ink)}
+.row{display:flex;gap:8px;margin-top:10px}.row button{flex:1;padding:13px;background:#efe6d3;font-weight:600}.row button.on{background:var(--green);color:#fff}
+.toast{position:fixed;left:50%;bottom:30px;transform:translateX(-50%);background:#2d2a24;color:#fff;padding:10px 16px;border-radius:14px;font-size:14px;opacity:0;transition:opacity .25s;pointer-events:none;z-index:50;max-width:90vw;text-align:center}
+.toast.on{opacity:1}
+.demo{display:grid;grid-template-columns:repeat(4,34px);margin:10px auto;border:2px solid var(--line);border-radius:8px;overflow:hidden;width:max-content}
+.demo span{width:34px;height:34px;display:flex;align-items:center;justify-content:center;font-size:20px}
+.hidden{display:none!important}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header><h1 id="hTitle"></h1><div><button class="link" id="bLang"></button><button class="link" id="bRules"></button><button class="link" id="bLevels"></button></div></header>
+
+<section id="play">
+  <div class="meta"><span><b id="pTitle"></b><br><span id="pSub"></span></span><span class="pill" id="timer">0:00</span></div>
+  <div class="grid" id="grid"></div>
+  <div class="tools">
+    <button id="tUndo"><span class="e">↩️</span><span data-t="undo"></span></button>
+    <button id="tClear"><span class="e">🧹</span><span data-t="clear"></span></button>
+    <button id="tHint"><span class="e">💡</span><span data-t="hint"></span></button>
+    <button id="tCheck"><span class="e">🔍</span><span data-t="check"></span></button>
+  </div>
+  <div class="toggle"><span data-t="autoX"></span><button class="sw" id="sw"></button></div>
+  <p class="help" data-t="howTap"></p>
+</section>
+
+<section id="levels" class="hidden">
+  <button class="daily" id="dailyBtn"><span class="e">📅</span><span><b data-t="daily"></b><small id="dailySub"></small></span></button>
+  <div id="lvList"></div>
+</section>
+
+<section id="rules" class="hidden"><div class="card" id="rulesBody"></div><button class="big" id="bRulesOk" data-t="gotIt"></button></section>
+</div>
+<div class="overlay hidden" id="winBox"><div class="modal">
+  <div class="e">🎉</div><h2 data-t="solved"></h2>
+  <div class="stats"><span><b id="wTime"></b><span data-t="time"></span></span><span><b id="wHints"></b><span data-t="hints"></span></span><span><b id="wStreak"></b><span data-t="streak"></span></span></div>
+  <div class="row"><button id="wShare" data-t="share"></button><button class="on" id="wNext" data-t="next"></button></div>
+</div></div>
+<div class="toast" id="toast"></div>
+
+<script>
+// ================= i18n =================
+const T = {
+ zh:{title:'🐰 兔子布阵', lang:'EN', rules:'规则', levels:'关卡', undo:'撤销', clear:'清空', hint:'提示', check:'检查', autoX:'放兔子时自动标 ✕', gotIt:'开始',
+   howTap:'点一下标 ✕，再点一下放 🐰，再点一下清空。按住拖动可以连续标 ✕。', daily:'每日一题', solved:'布阵成功！', time:'用时', hints:'提示', streak:'连续天数', share:'📤 分享成绩', next:'下一题 →',
+   size:n=>`${n}×${n}`, diff:['','','','','','','简单','简单','中等','困难','烧脑'], dailyTitle:d=>`每日一题 · ${d}`, levelTitle:(n,i)=>`${n}×${n} 第 ${i} 关`,
+   sizeHead:n=>`${n}×${n} ${T.zh.diff[n]}`, noMistake:'目前没有发现错误 👍', mistakes:k=>`有 ${k} 处放错了，已经标红`, hintShown:'这一格一定有兔子', hintWrong:'这只兔子放错了位置', hintX:'这里其实不该打 ✕',
+   copied:'成绩已复制，可以粘贴给她看', clearAsk:'清空这一题重新开始？', dailySub:(n,d)=>`${n}×${n} · ${d}`, alreadyDone:'✓ 今天已完成',
+   rulesHtml:`<h2>规则</h2><ul><li>棋盘分成几块不同颜色的区域</li><li><b>每一行、每一列、每一块颜色</b>里，都要正好放 <b>1 只 🐰</b></li><li>兔子之间<b>不能挨着</b>，上下左右和斜对角都不行</li><li>每道题只有一个答案，全靠推理，不用猜</li></ul>
+     <div class="demo"><span style="background:#ffd6d6"></span><span style="background:#ffd6d6">🐰</span><span style="background:#d6ecff"></span><span style="background:#d6ecff"></span><span style="background:#ffd6d6"></span><span style="background:#e3f6d6"></span><span style="background:#e3f6d6"></span><span style="background:#d6ecff">🐰</span><span style="background:#fff1c9">🐰</span><span style="background:#e3f6d6"></span><span style="background:#e3f6d6"></span><span style="background:#d6ecff"></span><span style="background:#fff1c9"></span><span style="background:#fff1c9"></span><span style="background:#e3f6d6">🐰</span><span style="background:#e3f6d6"></span></div>
+     <h2>小技巧</h2><ul><li>先看最小的颜色块：只有一两格的，兔子位置几乎是定的</li><li>放下一只兔子以后，它的整行、整列、整块颜色和周围 8 格都不能再放，先标上 ✕</li><li>如果某两块颜色都挤在同样的两行里，那这两行的兔子就被它们"包"了，别的颜色在这两行里都可以打 ✕</li></ul>`},
+ en:{title:'🐰 Bunny Formation', lang:'中文', rules:'Rules', levels:'Levels', undo:'Undo', clear:'Clear', hint:'Hint', check:'Check', autoX:'Auto-mark ✕ when placing a bunny', gotIt:'Start',
+   howTap:'Tap once for ✕, again for 🐰, again to clear. Press and drag to mark many ✕.', daily:'Daily puzzle', solved:'Formation complete!', time:'time', hints:'hints', streak:'day streak', share:'📤 Share', next:'Next →',
+   size:n=>`${n}×${n}`, diff:['','','','','','','easy','easy','medium','hard','brutal'], dailyTitle:d=>`Daily · ${d}`, levelTitle:(n,i)=>`${n}×${n} level ${i}`,
+   sizeHead:n=>`${n}×${n} ${T.en.diff[n]}`, noMistake:'No mistakes so far 👍', mistakes:k=>`${k} mistake${k>1?'s':''}, marked in red`, hintShown:'This square must have a bunny', hintWrong:'This bunny is in the wrong place', hintX:"This ✕ shouldn't be here",
+   copied:'Result copied, paste it to her', clearAsk:'Clear this puzzle and start over?', dailySub:(n,d)=>`${n}×${n} · ${d}`, alreadyDone:'✓ done today',
+   rulesHtml:`<h2>Rules</h2><ul><li>The board is split into coloured regions</li><li>Every <b>row, column and colour region</b> holds exactly <b>one 🐰</b></li><li>Bunnies may <b>not touch</b>, not even diagonally</li><li>Each puzzle has exactly one solution, reachable by logic alone</li></ul>
+     <div class="demo"><span style="background:#ffd6d6"></span><span style="background:#ffd6d6">🐰</span><span style="background:#d6ecff"></span><span style="background:#d6ecff"></span><span style="background:#ffd6d6"></span><span style="background:#e3f6d6"></span><span style="background:#e3f6d6"></span><span style="background:#d6ecff">🐰</span><span style="background:#fff1c9">🐰</span><span style="background:#e3f6d6"></span><span style="background:#e3f6d6"></span><span style="background:#d6ecff"></span><span style="background:#fff1c9"></span><span style="background:#fff1c9"></span><span style="background:#e3f6d6">🐰</span><span style="background:#e3f6d6"></span></div>
+     <h2>Tips</h2><ul><li>Start with the smallest regions: a one- or two-square region nearly places its bunny for you</li><li>After placing a bunny, its row, column, region and the 8 squares around it are all ✕</li><li>If two regions are squeezed into the same two rows, those rows belong to them: ✕ every other colour in those rows</li></ul>`}
+};
+let LANG = localStorage.getItem('q-lang') || 'zh';
+const t = k => T[LANG][k];
+const $ = id => document.getElementById(id);
+const COLORS = ['#ffd3d3','#cfe6ff','#dff4cf','#fff0bf','#ead8ff','#ffe0c4','#c9f1ec','#f6d5ea','#e6e1d1','#d4dcff'];
+
+// ================= puzzle logic (pure) =================
+let P = [];                                   // all puzzles, loaded from puzzles.json
+function regionAt(pz, r, c){ return pz.r[r].charCodeAt(c) - 97; }
+// return the set of conflicting cells for current rabbits
+function conflicts(pz, st){
+  const N = pz.n, bad = new Set(), rabbits = [];
+  for (let r = 0; r < N; r++) for (let c = 0; c < N; c++) if (st[r * N + c] === 2) rabbits.push([r, c]);
+  for (let a = 0; a < rabbits.length; a++) for (let b = a + 1; b < rabbits.length; b++){
+    const [r1, c1] = rabbits[a], [r2, c2] = rabbits[b];
+    if (r1 === r2 || c1 === c2 || regionAt(pz, r1, c1) === regionAt(pz, r2, c2) || (Math.abs(r1 - r2) <= 1 && Math.abs(c1 - c2) <= 1)){ bad.add(r1 * N + c1); bad.add(r2 * N + c2); }
+  }
+  return {bad, count: rabbits.length};
+}
+const solved = (pz, st) => { const k = conflicts(pz, st); return k.count === pz.n && k.bad.size === 0; };
+
+// ================= state =================
+const todayStr = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+const dayNum = s => Math.floor(Date.UTC(+s.slice(0, 4), +s.slice(5, 7) - 1, +s.slice(8, 10)) / 864e5);
+const DAILY_SIZE = [10, 6, 7, 7, 8, 8, 9];     // Sun..Sat
+function dailyIndex(s){
+  const dow = new Date(Date.UTC(+s.slice(0, 4), +s.slice(5, 7) - 1, +s.slice(8, 10))).getUTCDay();
+  const n = DAILY_SIZE[dow], pool = P.map((p, i) => [p, i]).filter(([p]) => p.n === n);
+  return pool[dayNum(s) % pool.length][1];
+}
+let cur = -1, mode = 'level', st = [], hist = [], hintsUsed = 0, startAt = 0, elapsed = 0, timerT = null, wonShown = false;
+const auto = () => localStorage.getItem('q-auto') === '1';
+const key = () => mode === 'daily' ? 'q-d-' + todayStr() : 'q-p-' + cur;
+function save(){ localStorage.setItem(key(), JSON.stringify({st, hints:hintsUsed, el:elapsed + (startAt ? Date.now() - startAt : 0), done:solved(P[cur], st)})); }
+function loadSaved(){ try { return JSON.parse(localStorage.getItem(key()) || 'null'); } catch { return null; } }
+
+function open(idx, m){
+  cur = idx; mode = m; const pz = P[cur], s = loadSaved();
+  st = s && s.st && s.st.length === pz.n * pz.n ? s.st : Array(pz.n * pz.n).fill(0);
+  hintsUsed = s ? s.hints || 0 : 0; elapsed = s ? s.el || 0 : 0; hist = []; wonShown = !!(s && s.done);
+  localStorage.setItem('q-last', JSON.stringify({idx, m}));
+  startAt = wonShown ? 0 : Date.now();
+  show('play'); render(); tick();
+}
+function tick(){ clearInterval(timerT); timerT = setInterval(() => { $('timer').textContent = fmtTime(curElapsed()); }, 1000); $('timer').textContent = fmtTime(curElapsed()); }
+const curElapsed = () => elapsed + (startAt ? Date.now() - startAt : 0);
+const fmtTime = ms => { const s = Math.floor(ms / 1000); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
+
+// ================= rendering =================
+function render(){
+  applyLang();
+  const pz = P[cur], N = pz.n;
+  $('pTitle').textContent = mode === 'daily' ? t('dailyTitle')(todayStr()) : t('levelTitle')(N, P.slice(0, cur + 1).filter(p => p.n === N).length);
+  $('pSub').textContent = `${t('size')(N)} · ${t('diff')[N]}`;
+  const {bad} = conflicts(pz, st);
+  const g = $('grid'); g.style.gridTemplateColumns = `repeat(${N},1fr)`;
+  g.classList.toggle('won', solved(pz, st));
+  let h = '';
+  for (let r = 0; r < N; r++) for (let c = 0; c < N; c++){
+    const k = regionAt(pz, r, c), i = r * N + c;
+    const cls = ['c'];
+    if (r > 0 && regionAt(pz, r - 1, c) !== k) cls.push('bt');
+    if (c > 0 && regionAt(pz, r, c - 1) !== k) cls.push('bl');
+    if (bad.has(i)) cls.push('bad');
+    h += `<div class="${cls.join(' ')}" data-i="${i}" style="background:${COLORS[k]}">${st[i] === 2 ? '<span class="bun">🐰</span>' : st[i] === 1 ? '<span class="x">✕</span>' : ''}</div>`;
+  }
+  g.innerHTML = h;
+  $('sw').classList.toggle('on', auto());
+}
+function applyLang(){
+  document.documentElement.lang = LANG === 'zh' ? 'zh' : 'en';
+  $('hTitle').textContent = t('title'); $('bLang').textContent = t('lang'); $('bRules').textContent = t('rules'); $('bLevels').textContent = t('levels');
+  document.querySelectorAll('[data-t]').forEach(el => el.textContent = t(el.dataset.t));
+  $('rulesBody').innerHTML = t('rulesHtml');
+}
+function show(id){ ['play','levels','rules'].forEach(v => $(v).classList.toggle('hidden', v !== id)); }
+function toast(s){ const el = $('toast'); el.textContent = s; el.classList.add('on'); clearTimeout(toast.h); toast.h = setTimeout(() => el.classList.remove('on'), 2400); }
+
+// ================= input: tap cycles, drag paints ✕ =================
+let drag = null;
+function setCell(i, v, record = true){
+  if (st[i] === v) return;
+  if (record) hist.push(st.slice());
+  st[i] = v;
+  if (v === 2 && auto()){
+    const pz = P[cur], N = pz.n, r = Math.floor(i / N), c = i % N, k = regionAt(pz, r, c);
+    for (let rr = 0; rr < N; rr++) for (let cc = 0; cc < N; cc++){
+      const j = rr * N + cc; if (j === i || st[j]) continue;
+      if (rr === r || cc === c || regionAt(pz, rr, cc) === k || (Math.abs(rr - r) <= 1 && Math.abs(cc - c) <= 1)) st[j] = 1;
+    }
+  }
+}
+function after(){
+  render(); save();
+  if (!wonShown && solved(P[cur], st)) win();
+}
+const cellFromPoint = (x, y) => { const el = document.elementFromPoint(x, y); const c = el && el.closest && el.closest('.c'); return c ? +c.dataset.i : -1; };
+$('grid').addEventListener('pointerdown', e => {
+  if (wonShown) return;
+  const i = cellFromPoint(e.clientX, e.clientY); if (i < 0) return;
+  e.preventDefault();
+  drag = {start:i, moved:false, paint: st[i] === 1 ? 0 : 1, snap: st.slice(), seen:new Set([i])};
+});
+$('grid').addEventListener('pointermove', e => {
+  if (!drag) return;
+  const i = cellFromPoint(e.clientX, e.clientY); if (i < 0 || drag.seen.has(i)) return;
+  if (!drag.moved){ drag.moved = true; if (st[drag.start] !== 2) st[drag.start] = drag.paint; }
+  drag.seen.add(i);
+  if (st[i] !== 2) st[i] = drag.paint;
+  render();
+});
+window.addEventListener('pointerup', () => {
+  if (!drag) return;
+  const d = drag; drag = null;
+  if (d.moved){ hist.push(d.snap); after(); return; }
+  const i = d.start, v = st[i];
+  setCell(i, v === 0 ? 1 : v === 1 ? 2 : 0);
+  after();
+});
+
+// ================= tools =================
+$('tUndo').onclick = () => { if (!hist.length || wonShown) return; st = hist.pop(); after(); };
+$('tClear').onclick = () => { if (wonShown) return; if (!confirm(t('clearAsk'))) return; hist.push(st.slice()); st = st.map(() => 0); after(); };
+$('tCheck').onclick = () => {
+  const pz = P[cur], N = pz.n; let wrong = 0;
+  for (let r = 0; r < N; r++) for (let c = 0; c < N; c++){ const i = r * N + c; if ((st[i] === 2 && pz.s[r] !== c) || (st[i] === 1 && pz.s[r] === c)) wrong++; }
+  if (!wrong){ toast(t('noMistake')); return; }
+  toast(t('mistakes')(wrong));
+  for (let r = 0; r < N; r++) for (let c = 0; c < N; c++){ const i = r * N + c; if ((st[i] === 2 && pz.s[r] !== c) || (st[i] === 1 && pz.s[r] === c)) flash(i); }
+};
+$('tHint').onclick = () => {
+  if (wonShown) return;
+  const pz = P[cur], N = pz.n;
+  for (let r = 0; r < N; r++) for (let c = 0; c < N; c++){ const i = r * N + c; if (st[i] === 2 && pz.s[r] !== c){ hintsUsed++; save(); flash(i); toast(t('hintWrong')); return; } }
+  for (let r = 0; r < N; r++){ const i = r * N + pz.s[r]; if (st[i] === 1){ hintsUsed++; save(); flash(i); toast(t('hintX')); return; } }
+  // reveal a correct bunny, preferring the row with the fewest open squares (most "forced")
+  let best = -1, bestOpen = 99;
+  for (let r = 0; r < N; r++){ const i = r * N + pz.s[r]; if (st[i] === 2) continue; const open = [...Array(N).keys()].filter(c => !st[r * N + c]).length; if (open < bestOpen){ bestOpen = open; best = i; } }
+  if (best < 0) return;
+  hintsUsed++; hist.push(st.slice()); setCell(best, 2, false); after(); flash(best); toast(t('hintShown'));
+};
+function flash(i){ setTimeout(() => { const el = document.querySelector(`.c[data-i="${i}"]`); if (el){ el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash'); } }, 30); }
+$('sw').onclick = () => { localStorage.setItem('q-auto', auto() ? '0' : '1'); render(); };
+
+// ================= win, streak, share =================
+function win(){
+  wonShown = true; elapsed = curElapsed(); startAt = 0; save(); clearInterval(timerT); $('timer').textContent = fmtTime(elapsed);
+  let streak = +(localStorage.getItem('q-streak') || 0);
+  if (mode === 'daily'){
+    const last = localStorage.getItem('q-streak-day'), today = todayStr();
+    if (last !== today){ streak = last && dayNum(today) - dayNum(last) === 1 ? streak + 1 : 1; localStorage.setItem('q-streak', streak); localStorage.setItem('q-streak-day', today); }
+  }
+  $('wTime').textContent = fmtTime(elapsed); $('wHints').textContent = hintsUsed; $('wStreak').textContent = streak || '-';
+  setTimeout(() => $('winBox').classList.remove('hidden'), 700);
+  if (navigator.vibrate) try { navigator.vibrate([30, 40, 30]); } catch {}
+}
+$('wShare').onclick = async () => {
+  const pz = P[cur], label = mode === 'daily' ? todayStr() : `${pz.n}×${pz.n} #${P.slice(0, cur + 1).filter(p => p.n === pz.n).length}`;
+  const text = `🐰 ${LANG === 'zh' ? '兔子布阵' : 'Bunny Formation'} ${label}\n⏱ ${fmtTime(elapsed)}  💡 ${hintsUsed}\n${location.origin + location.pathname}`;
+  if (navigator.share){ try { await navigator.share({text}); return; } catch (e) { if (e && e.name === 'AbortError') return; } }
+  try { await navigator.clipboard.writeText(text); toast(t('copied')); } catch { toast(text); }
+};
+$('wNext').onclick = () => { $('winBox').classList.add('hidden'); const N = P[cur].n; const nxt = P.findIndex((p, i) => i > (mode === 'daily' ? -1 : cur) && p.n === N && !isDone(i)); openLevels(); if (nxt >= 0 && mode !== 'daily') open(nxt, 'level'); };
+$('winBox').onclick = e => { if (e.target.id === 'winBox') $('winBox').classList.add('hidden'); };
+
+// ================= level list =================
+const isDone = i => { try { return JSON.parse(localStorage.getItem('q-p-' + i) || '{}').done; } catch { return false; } };
+function openLevels(){
+  applyLang();
+  const today = todayStr(), di = dailyIndex(today), dd = (() => { try { return JSON.parse(localStorage.getItem('q-d-' + today) || '{}').done; } catch { return false; } })();
+  $('dailySub').textContent = t('dailySub')(P[di].n, t('diff')[P[di].n]) + (dd ? ' · ' + t('alreadyDone') : '');
+  const sizes = [...new Set(P.map(p => p.n))];
+  $('lvList').innerHTML = sizes.map(n => `<div class="card" style="padding:12px 14px"><h2>${t('sizeHead')(n)}</h2><div class="lv">${P.map((p, i) => [p, i]).filter(([p]) => p.n === n).map(([p, i], k) => `<button data-i="${i}" class="${isDone(i) ? 'done' : ''} ${mode === 'level' && cur === i ? 'cur' : ''}">${k + 1}</button>`).join('')}</div></div>`).join('');
+  document.querySelectorAll('.lv button').forEach(b => b.onclick = () => open(+b.dataset.i, 'level'));
+  show('levels');
+}
+$('dailyBtn').onclick = () => open(dailyIndex(todayStr()), 'daily');
+$('bLevels').onclick = () => { if (startAt){ elapsed = curElapsed(); startAt = Date.now(); save(); } openLevels(); };
+$('bRules').onclick = () => { applyLang(); show('rules'); };
+$('bRulesOk').onclick = () => { localStorage.setItem('q-seen-rules', '1'); if (cur >= 0) { show('play'); render(); } else open(dailyIndex(todayStr()), 'daily'); };
+$('bLang').onclick = () => { LANG = LANG === 'zh' ? 'en' : 'zh'; localStorage.setItem('q-lang', LANG); if (!$('levels').classList.contains('hidden')) openLevels(); else if (cur >= 0) render(); else applyLang(); };
+document.addEventListener('visibilitychange', () => { if (cur < 0 || wonShown) return; if (document.hidden){ elapsed = curElapsed(); startAt = 0; save(); } else { startAt = Date.now(); } });
+
+(async () => {
+  P = await (await fetch('puzzles.json')).json();
+  applyLang();
+  if (!localStorage.getItem('q-seen-rules')){ show('rules'); return; }
+  open(dailyIndex(todayStr()), 'daily');
+})();
+</script>
+</body>
+</html>
