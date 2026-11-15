@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#f3ecd9">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <title>Burrow 🐰 a 2-player strategy game</title>
@@ -11,6 +11,7 @@
 <style>
 :root{--bg:#f3ecd9;--ink:#2b2a26;--muted:#7a7465;--light:#e9dcb8;--dark:#d8c897;--p1:#ffffff;--p2:#c46a2b;--accent:#3f7d3a;--hl:#ffd54f}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body,button{touch-action:manipulation}
 body{margin:0;font-family:-apple-system,"Helvetica Neue",Arial,sans-serif;background:var(--bg);color:var(--ink);display:flex;justify-content:center;padding:env(safe-area-inset-top) 12px 24px}
 .wrap{width:100%;max-width:480px}
 header{display:flex;justify-content:space-between;align-items:center;padding:14px 2px 8px}
@@ -388,6 +389,10 @@ function load(){
 }
 window.addEventListener('hashchange', load);
 load();
+/* no double-tap zoom */
+let __lastTouch = 0;
+document.addEventListener('touchend', e => { const now = Date.now(); if (now - __lastTouch < 350 && !e.target.closest('input,textarea')) e.preventDefault(); __lastTouch = now; }, {passive:false});
+document.addEventListener('dblclick', e => e.preventDefault(), {passive:false});
 </script>
 </body>
 </html>
