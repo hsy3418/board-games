@@ -7,9 +7,9 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <title>兔子赛跑 Bunny Race 🐰🦊</title>
 <meta property="og:title" content="Bunny Race 兔子赛跑">
-<meta property="og:description" content="Dice, chaos and dirty tricks for two. 掷骰子、使坏、冲线！">
+<meta property="og:description" content="Dice, choices and dirty tricks for two. 掷骰子、挑步数、放香蕉皮！">
 <style>
-:root{--bg:#dff0d0;--ink:#24301f;--muted:#66745f;--cell:#f7f3e3;--cell2:#efe8cc;--accent:#e2702a;--green:#3f7d3a;--card:#fff}
+:root{--bg:#dff0d0;--ink:#24301f;--muted:#66745f;--cell:#f7f3e3;--cell2:#efe8cc;--accent:#e2702a;--green:#3f7d3a;--blue:#2f6fb5;--card:#fff}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 body{margin:0;font-family:-apple-system,"PingFang SC","Helvetica Neue",Arial,sans-serif;background:var(--bg);color:var(--ink);display:flex;justify-content:center;padding:env(safe-area-inset-top) 10px 28px}
 .wrap{width:100%;max-width:500px}
@@ -25,24 +25,30 @@ button{font:inherit;cursor:pointer;border:none;border-radius:12px;color:inherit}
 .live{display:inline-block;width:8px;height:8px;border-radius:50%;background:#bbb;margin-left:3px;vertical-align:1px}.live.on{background:#2e7d32}
 .board{display:grid;grid-template-columns:repeat(8,1fr);gap:3px;background:#b9d6a3;padding:4px;border-radius:14px;box-shadow:0 6px 16px rgba(0,0,0,.12)}
 .sq{position:relative;aspect-ratio:1;border-radius:8px;background:var(--cell);display:flex;align-items:center;justify-content:center;font-size:min(4.6vw,20px)}
-.sq:nth-child(odd){background:var(--cell2)}
+.sq.alt{background:var(--cell2)}
 .sq .num{position:absolute;top:1px;left:3px;font-size:9px;color:#9a9378}
-.sq .sp{opacity:.9}
 .sq.start{background:#cfe8ff}.sq.end{background:#ffe1a8}
-.tok{position:absolute;font-size:min(6.4vw,28px);filter:drop-shadow(0 2px 1px rgba(0,0,0,.35));transition:transform .12s}
+.sq .item{position:absolute;right:1px;bottom:0;font-size:min(4vw,17px)}
+.sq.target{outline:3px solid var(--blue);outline-offset:-3px;background:#e3efff}
+.sq .mark{position:absolute;inset:6%;border:3px solid var(--blue);border-radius:50%;display:flex;align-items:flex-end;justify-content:center;font-size:min(3vw,12px);color:var(--blue);font-weight:700;z-index:2;pointer-events:none;line-height:1}
+.tok{position:absolute;font-size:min(6.4vw,28px);filter:drop-shadow(0 2px 1px rgba(0,0,0,.35));z-index:3}
 .tok.t1{left:2%;bottom:2%}.tok.t2{right:2%;top:2%}
-.tok.solo{left:auto;right:auto;top:auto;bottom:auto}
 .log{min-height:48px;text-align:center;font-size:15px;margin:10px 4px 6px;line-height:1.4}
 .log b{color:var(--accent)}
+.hint{text-align:center;font-size:14px;color:var(--blue);min-height:20px;margin-bottom:4px}
 .hand{display:flex;gap:8px;justify-content:center;margin:6px 0;min-height:66px;flex-wrap:wrap}
-.cardb{background:var(--card);border:2px solid #e6dcc0;border-radius:12px;padding:6px 8px;min-width:88px;font-size:13px;line-height:1.25;text-align:center}
+.cardb{background:var(--card);border:2px solid #e6dcc0;border-radius:12px;padding:6px 8px;width:31%;min-width:96px;font-size:13px;line-height:1.25;text-align:center}
 .cardb .e{font-size:24px;display:block}
 .cardb:disabled{opacity:.45}
 .cardb.passive{border-style:dashed}
+.cardb.armed{border-color:var(--blue);background:#e3efff}
 .rollrow{display:flex;gap:10px;align-items:center;margin-top:8px}
-.dice{font-size:44px;width:64px;text-align:center}
 .roll{flex:1;padding:16px;font-size:18px;background:var(--accent);color:#fff;font-weight:600}
 .roll:disabled{background:#c9b8a8}
+.picks{display:flex;gap:10px;margin-top:8px}
+.picks button{flex:1;padding:12px 6px;font-size:16px;background:#fff;border:3px solid var(--blue);color:var(--ink)}
+.picks button .d{font-size:34px;display:block;line-height:1.1}
+.picks button small{display:block;color:var(--muted);font-size:12px}
 .card{background:#fff;border-radius:16px;padding:16px;margin-top:10px;line-height:1.55;font-size:15px}
 .card h2{font-size:17px;margin:0 0 8px}
 .card ul{padding-left:18px;margin:6px 0}
@@ -57,8 +63,6 @@ input{width:100%;font:inherit;padding:12px;border-radius:12px;border:2px solid #
 .toast.on{opacity:1}
 .win{font-size:20px}
 .hidden{display:none!important}
-.shake{animation:sh .45s}
-@keyframes sh{0%,100%{transform:rotate(0)}25%{transform:rotate(-18deg)}75%{transform:rotate(18deg)}}
 </style>
 </head>
 <body>
@@ -82,8 +86,10 @@ input{width:100%;font:inherit;padding:12px;border-radius:12px;border:2px solid #
   </div>
   <div class="board" id="board"></div>
   <div class="log" id="log"></div>
+  <div class="hint" id="hint"></div>
   <div class="hand" id="hand"></div>
-  <div class="rollrow"><div class="dice" id="dice">🎲</div><button class="roll" id="bRoll"></button></div>
+  <div class="picks hidden" id="picks"></div>
+  <div class="rollrow" id="rollrow"><button class="roll" id="bRoll"></button></div>
   <div class="row hidden" id="endRow"><button class="on" id="bRematch" data-t="rematch"></button></div>
   <div class="card hidden" id="invite">
     <b data-t="invTitle"></b>
@@ -99,124 +105,164 @@ input{width:100%;font:inherit;padding:12px;border-radius:12px;border:2px solid #
 
 <script>
 // ================= i18n =================
+const DICE = ['⚀','⚁','⚂','⚃','⚄','⚅'];
 const T = {
  zh: {title:'🐰 兔子赛跑', rules:'规则', newG:'新游戏', lang:'EN', newGame:'新游戏', yourName:'你的名字', theirName:'对方的名字', whoFirst:'谁先走？', me:'我', them:'对方',
-  setupNote:'你是 🐰，对方是 🦊。开始后把邀请链接发给对方，两个人在各自手机上同时看到同一个赛道。', start:'开始', rematch:'再来一局 🔁', copy:'📋 复制链接',
+  setupNote:'你是 🐰，对方是 🦊。开始后把邀请链接发给对方，两个人在各自手机上同时看到同一条赛道。', start:'开始', rematch:'再来一局 🔁', copy:'📋 复制链接',
   invTitle:'把这个链接发给对方', invNote:'对方打开后自动成为 🦊，只需要发一次。', gotIt:'知道了',
-  roll:'🎲 掷骰子', notYour:n=>`等 ${n} 掷骰子…`, youTurn:'轮到你了！可以先出一张卡，再掷骰子', you:'你', here:'在线', away:'不在',
-  skip:'下回合停一次', cards:n=>`手牌 ${n}`, won:n=>`🏆 ${n} 冲线获胜！`, waitingFor:n=>`等 ${n} 行动`,
-  card:{banana:['🍌','香蕉皮','对方滑倒，停一回合'], swap:['🔄','乾坤大挪移','和对方交换位置'], magnet:['🧲','磁铁','落后时，直接吸到对方身后一格'], boost:['💨','加速','这次掷骰子 +3'], lucky:['🍀','幸运','这次掷两颗骰子，取大的'], shield:['🛡️','护盾','被动：自动挡掉对方的一张坏招']},
-  sq:{carrot:'🥕 再掷一次', hole:'🕳️ 掉坑，退 3 格', swap:'🌀 和对方换位置', gift:'🎁 抽一张卡', trap:'🪤 被夹住，停一回合', rocket:'🚀 向前冲 4 格'},
-  ev:{rolled:(n,d)=>`${n} 掷出了 <b>${d}</b>`, lucky:(n,a,b)=>`${n} 掷了两次：${a} 和 ${b}，取 <b>${Math.max(a,b)}</b>`, boost:'（+3 加速）', played:(n,c)=>`${n} 出了 ${c}`, blocked:n=>`🛡️ ${n} 的护盾挡住了！`,
-       skipped:n=>`${n} 这回合停一次 😵`, handFull:'手牌满了（最多 3 张），没抽到', drew:c=>`抽到了 ${c}`, magnetFail:'可惜你没落后，磁铁没用上', extra:n=>`${n} 再掷一次！`},
-  rulesHtml:`<h2>怎么玩</h2><ul>
-   <li>轮流掷骰子，先跑到 🏁 的人赢</li>
-   <li>掷骰子之前，可以先出<b>一张</b>坏招卡（不出也行）</li>
-   <li>手牌最多 3 张。开局每人 1 张，踩到 🎁 再抽</li></ul>
-   <h2>特殊格子</h2><ul><li>🥕 再掷一次</li><li>🕳️ 掉坑，退 3 格</li><li>🌀 和对方交换位置</li><li>🎁 抽一张卡</li><li>🪤 被夹住，下回合停一次</li><li>🚀 向前冲 4 格</li></ul>
-   <h2>坏招卡</h2><ul><li>🍌 香蕉皮：对方停一回合</li><li>🔄 乾坤大挪移：和对方交换位置</li><li>🧲 磁铁：落后时直接吸到对方身后</li><li>💨 加速：这次 +3</li><li>🍀 幸运：掷两颗取大的</li><li>🛡️ 护盾：自动挡掉对方的 🍌 或 🔄</li></ul>`},
+  roll:'🎲 掷两颗骰子', notYour:n=>`等 ${n}…`, youTurn:'轮到你了！可以先出一张卡，再掷骰子', you:'你', here:'在线', away:'不在',
+  cards:n=>`手牌 ${n}`, shielded:'🛡️ 有护盾', won:n=>`🏆 ${n} 冲线获胜！`, waitingFor:n=>`等 ${n} 行动`,
+  pickHint:'选一颗骰子走（蓝圈是落点）', pickSum:'两颗加起来', steps:n=>`走 ${n} 步`, remoteHint:'遥控骰子：你想走几步？', placeHint:c=>`点一个蓝色格子放 ${c}（再点一次卡片取消）`, noCards:'没有手牌，踩到 🎁 可以抽',
+  card:{banana:['🍌','香蕉皮','放在对方前面，谁踩到谁滑倒退 3 格'], wall:['🧱','路障','放在对方前面，谁走到这里都得停下'], magnet:['🧲','磁铁','落后时，直接吸到对方身后一格'], boost:['💨','加速','这次两颗骰子可以加起来走'], remote:['🎯','遥控骰子','这次不掷，自己选 1 到 6'], shield:['🛡️','护盾','被动：挡掉下一次倒霉事']},
+  sq:{carrot:'🥕 再来一回合', hole:'🕳️ 掉坑，退 3 格', swap:'🌀 和对方换位置', gift:'🎁 抽一张卡', rocket:'🚀 向前冲 4 格'},
+  ev:{rolled:(n,a,b)=>`${n} 掷出 ${DICE[a-1]} ${DICE[b-1]}`, moved:(n,k)=>`${n} 走了 <b>${k}</b> 步`, remote:(n,k)=>`${n} 用遥控骰子走了 <b>${k}</b> 步`, played:(n,c)=>`${n} 出了 ${c}`, placed:(c,sq)=>`${c} 放在了第 ${sq} 格`,
+       shield:n=>`🛡️ ${n} 的护盾挡住了！`, slipped:n=>`🍌 ${n} 踩到香蕉皮，滑倒退 3 格！`, walled:n=>`🧱 ${n} 被路障拦住了`, handFull:'手牌满了（最多 3 张），没抽到', drew:c=>`抽到了 ${c}`, magnetFail:'可惜你没落后，磁铁没用上', extra:n=>`${n} 再来一回合！`},
+  rulesHtml:`<h2>每回合</h2><ul>
+   <li>可以先出<b>一张</b>卡（不出也行）</li>
+   <li>掷<b>两颗</b>骰子，<b>挑一颗</b>来走。蓝圈会显示每颗骰子的落点，挑能踩到好格子、避开坏格子的那颗</li>
+   <li>先跑到 🏁 的人赢</li></ul>
+   <h2>格子</h2><ul><li>🥕 再来一回合</li><li>🎁 抽一张卡（手牌最多 3 张）</li><li>🚀 向前冲 4 格</li><li>🕳️ 掉坑，退 3 格</li><li>🌀 和对方换位置（整条赛道只有 1 个）</li></ul>
+   <h2>卡片</h2><ul><li>🍌 香蕉皮：放在对方前面 1 到 8 格，<b>谁</b>踩到谁退 3 格，自己也小心</li><li>🧱 路障：放在对方前面，谁走到这里都得停下，然后路障消失</li><li>🧲 磁铁：落后时，直接吸到对方身后一格</li><li>💨 加速：这次两颗骰子可以加起来走</li><li>🎯 遥控骰子：这次不掷，自己选 1 到 6</li><li>🛡️ 护盾：放在手里就生效，挡掉下一次坑、香蕉皮、路障或换位置</li></ul>`},
  en: {title:'🐰 Bunny Race', rules:'Rules', newG:'New game', lang:'中文', newGame:'New game', yourName:'Your name', theirName:'Their name', whoFirst:'Who goes first?', me:'Me', them:'Them',
   setupNote:'You are 🐰, they are 🦊. Send them the invite link and you both see the same track live on your own phones.', start:'Start', rematch:'Rematch 🔁', copy:'📋 Copy link',
   invTitle:'Send this link to your partner', invNote:'Opening it puts them on the 🦊 side. You only need to send it once.', gotIt:'Got it',
-  roll:'🎲 Roll', notYour:n=>`Waiting for ${n} to roll…`, youTurn:'Your turn! Play a card if you like, then roll', you:'you', here:'here', away:'away',
-  skip:'skips next turn', cards:n=>`${n} card${n===1?'':'s'}`, won:n=>`🏆 ${n} crosses the line!`, waitingFor:n=>`Waiting for ${n}`,
-  card:{banana:['🍌','Banana','They slip and miss a turn'], swap:['🔄','Switcheroo','Swap places with them'], magnet:['🧲','Magnet','If behind, jump to just behind them'], boost:['💨','Boost','+3 on this roll'], lucky:['🍀','Lucky','Roll two dice, keep the higher'], shield:['🛡️','Shield','Passive: blocks one of their tricks']},
-  sq:{carrot:'🥕 Roll again', hole:'🕳️ Hole, back 3', swap:'🌀 Swap places', gift:'🎁 Draw a card', trap:'🪤 Trapped, miss a turn', rocket:'🚀 Zoom 4 ahead'},
-  ev:{rolled:(n,d)=>`${n} rolled <b>${d}</b>`, lucky:(n,a,b)=>`${n} rolled ${a} and ${b}, keeps <b>${Math.max(a,b)}</b>`, boost:' (+3 boost)', played:(n,c)=>`${n} played ${c}`, blocked:n=>`🛡️ ${n}'s shield blocked it!`,
-       skipped:n=>`${n} misses this turn 😵`, handFull:'Hand full (max 3), no card', drew:c=>`drew ${c}`, magnetFail:"You weren't behind, the magnet fizzled", extra:n=>`${n} rolls again!`},
-  rulesHtml:`<h2>How to play</h2><ul>
-   <li>Take turns rolling. First to 🏁 wins</li><li>Before rolling you may play <b>one</b> trick card (optional)</li><li>Max 3 cards in hand. Everyone starts with 1, land on 🎁 to draw</li></ul>
-   <h2>Special squares</h2><ul><li>🥕 Roll again</li><li>🕳️ Hole, back 3</li><li>🌀 Swap places with them</li><li>🎁 Draw a card</li><li>🪤 Trapped, miss your next turn</li><li>🚀 Zoom 4 ahead</li></ul>
-   <h2>Trick cards</h2><ul><li>🍌 Banana: they miss a turn</li><li>🔄 Switcheroo: swap places</li><li>🧲 Magnet: if behind, jump to just behind them</li><li>💨 Boost: +3 this roll</li><li>🍀 Lucky: roll two, keep the higher</li><li>🛡️ Shield: auto-blocks their 🍌 or 🔄</li></ul>`}
+  roll:'🎲 Roll two dice', notYour:n=>`Waiting for ${n}…`, youTurn:'Your turn! Play a card if you like, then roll', you:'you', here:'here', away:'away',
+  cards:n=>`${n} card${n===1?'':'s'}`, shielded:'🛡️ shielded', won:n=>`🏆 ${n} crosses the line!`, waitingFor:n=>`Waiting for ${n}`,
+  pickHint:'Pick one die to move (blue circles show where you land)', pickSum:'Both together', steps:n=>`move ${n}`, remoteHint:'Remote dice: how far do you want to go?', placeHint:c=>`Tap a blue square to place ${c} (tap the card again to cancel)`, noCards:'No cards. Land on 🎁 to draw',
+  card:{banana:['🍌','Banana','Place ahead of them. Whoever lands on it slides back 3'], wall:['🧱','Roadblock','Place ahead of them. Anyone reaching it must stop'], magnet:['🧲','Magnet','If behind, jump to just behind them'], boost:['💨','Boost','Move with both dice added up'], remote:['🎯','Remote dice','No roll: choose 1 to 6'], shield:['🛡️','Shield','Passive: cancels your next bad luck']},
+  sq:{carrot:'🥕 Take another turn', hole:'🕳️ Hole, back 3', swap:'🌀 Swap places', gift:'🎁 Draw a card', rocket:'🚀 Zoom 4 ahead'},
+  ev:{rolled:(n,a,b)=>`${n} rolled ${DICE[a-1]} ${DICE[b-1]}`, moved:(n,k)=>`${n} moved <b>${k}</b>`, remote:(n,k)=>`${n} used the remote and moved <b>${k}</b>`, played:(n,c)=>`${n} played ${c}`, placed:(c,sq)=>`${c} placed on square ${sq}`,
+       shield:n=>`🛡️ ${n}'s shield saved them!`, slipped:n=>`🍌 ${n} slipped on a banana, back 3!`, walled:n=>`🧱 ${n} hit the roadblock`, handFull:'Hand full (max 3), no card', drew:c=>`drew ${c}`, magnetFail:"You weren't behind, the magnet fizzled", extra:n=>`${n} takes another turn!`},
+  rulesHtml:`<h2>Each turn</h2><ul>
+   <li>Optionally play <b>one</b> card</li><li>Roll <b>two</b> dice and <b>pick one</b> to move. Blue circles show where each die lands, so aim for good squares and dodge bad ones</li><li>First to 🏁 wins</li></ul>
+   <h2>Squares</h2><ul><li>🥕 Another turn</li><li>🎁 Draw a card (max 3)</li><li>🚀 Zoom 4 ahead</li><li>🕳️ Hole, back 3</li><li>🌀 Swap places (only one on the track)</li></ul>
+   <h2>Cards</h2><ul><li>🍌 Banana: place 1 to 8 squares ahead of them. <b>Anyone</b> landing on it slides back 3, careful</li><li>🧱 Roadblock: place ahead of them. Anyone reaching it stops there, then it's gone</li><li>🧲 Magnet: if behind, jump to just behind them</li><li>💨 Boost: move with both dice added up</li><li>🎯 Remote dice: no roll, choose 1 to 6</li><li>🛡️ Shield: held = active. Cancels your next hole, banana, roadblock or swap</li></ul>`}
 };
 let LANG = localStorage.getItem('race-lang') || 'zh';
 const t = k => T[LANG][k];
 
 // ================= rules engine (pure, deterministic) =================
-const END = 39;                                   // 40 squares: 0 = start, 39 = finish
-const SPECIAL = {3:'carrot',5:'gift',7:'hole',10:'swap',12:'gift',14:'rocket',17:'trap',19:'carrot',21:'gift',23:'hole',26:'swap',28:'gift',30:'rocket',32:'hole',34:'trap',36:'gift',37:'swap'};
-const SQ_ICON = {carrot:'🥕',gift:'🎁',hole:'🕳️',swap:'🌀',trap:'🪤',rocket:'🚀'};
-const CARDS = ['banana','swap','magnet','boost','lucky','shield'];
+const END = 47;                                   // 48 squares: 0 = start, 47 = finish
+const SPECIAL = {4:'carrot',7:'gift',10:'hole',13:'rocket',16:'gift',20:'carrot',23:'hole',26:'gift',30:'swap',33:'rocket',36:'gift',40:'hole'};
+const SQ_ICON = {carrot:'🥕',gift:'🎁',hole:'🕳️',swap:'🌀',rocket:'🚀'};
+const CARDS = ['banana','wall','magnet','boost','remote','shield'];
+const DRAW = ['banana','banana','wall','wall','boost','boost','shield','shield','magnet','remote'];   // draw digit 0..9
+const ITEM_ICON = {banana:'🍌', wall:'🧱'};
+const TARGETED = c => c === 'banana' || c === 'wall';
+const other = p => 3 - p;
 
 function initState(G){
-  return {pos:[0,0,0], carry:[], hand:[null,[CARDS[G.h[0]]],[CARDS[G.h[1]]]], skip:[0,0,0], turn:G.first, boost:0, lucky:false, used:false, winner:0, events:[], last:null};
+  return {pos:[0,0,0], hand:[null,[CARDS[G.h[0]]],[CARDS[G.h[1]]]], items:{}, turn:G.first, phase:'pre', boost:false, remote:false, used:false, dice:null, draw:0, winner:0, events:[], carry:[]};
 }
-const other = p => 3 - p;
-// action: {t:'C', i} play card at hand index i | {t:'R', r:[a,b,c]} roll with three random digits 0..5
-function step(S, a, names){
-  const me = S.turn, op = other(me), N = names, E = T[LANG].ev, C = T[LANG].card;
-  S.last = a;
-  if (S.winner) return S;
-  S.events = a.t === 'C' ? (S.carry || []).slice() : (S.carry || []); S.carry = [];   // card events stay visible until the roll
-  if (a.t === 'C'){
-    if (S.used) return S;
-    const c = S.hand[me][a.i]; if (!c || c === 'shield') return S;
-    S.hand[me].splice(a.i, 1); S.used = true;
-    S.events.push(E.played(N[me], C[c][0] + ' ' + C[c][1]));
-    const blocked = () => { const k = S.hand[op].indexOf('shield'); if (k < 0) return false; S.hand[op].splice(k, 1); S.events.push(E.blocked(N[op])); return true; };
-    if (c === 'banana'){ if (!blocked()) { S.skip[op]++; } }
-    else if (c === 'swap'){ if (!blocked()) { [S.pos[me], S.pos[op]] = [S.pos[op], S.pos[me]]; } }
-    else if (c === 'magnet'){ if (S.pos[op] - 1 > S.pos[me]) S.pos[me] = S.pos[op] - 1; else S.events.push(E.magnetFail); }
-    else if (c === 'boost') S.boost = 3;
-    else if (c === 'lucky') S.lucky = true;
-    S.carry = S.events.slice();
-    return S;
+// where a move of k steps from `from` would stop (roadblocks stop you; shield lets you pass one)
+function pathStop(S, p, k){
+  let pos = S.pos[p], shield = S.hand[p].includes('shield'), passed = null;
+  for (let s = 1; s <= k; s++){
+    const nx = Math.min(END, pos + 1);
+    if (S.items[nx] === 'wall'){
+      if (shield){ shield = false; passed = nx; }
+      else return {to:nx, wall:true, passed};
+    }
+    pos = nx; if (pos >= END) break;
   }
-  // roll
-  const [r0, r1, r2] = a.r;
-  let d = r0 + 1;
-  if (S.lucky){ d = Math.max(r0, r1) + 1; S.events.push(E.lucky(N[me], r0 + 1, r1 + 1)); }
-  else S.events.push(E.rolled(N[me], d));
-  if (S.boost) S.events[S.events.length - 1] += E.boost;
-  S.dice = d;
-  S.pos[me] = Math.min(END, S.pos[me] + d + S.boost);
+  return {to:pos, wall:false, passed};
+}
+function validTargets(S, me){
+  const op = other(me), out = [];
+  for (let sq = S.pos[op] + 1; sq <= Math.min(END - 1, S.pos[op] + 8); sq++)
+    if (!S.items[sq] && sq !== S.pos[me]) out.push(sq);
+  return out;
+}
+function bad(S, p){ const k = S.hand[p].indexOf('shield'); if (k < 0) return false; S.hand[p].splice(k, 1); S.events.push(T[LANG].ev.shield(nm[p])); return true; }
+let nm = [null, 'A', 'B'];
+
+// actions: C i sq (play card i, sq = target or 0) | R a b d (roll dice a,b in 0..5, draw digit d) | P k (pick: 0 first die, 1 second, 2 sum) | N v (remote: 1..6)
+function step(S, a){
+  const me = S.turn, op = other(me), E = T[LANG].ev, C = T[LANG].card;
+  if (S.winner) return false;
+  S.events = (S.carry || []).slice(); S.carry = [];
+  if (a.t === 'C'){
+    if (S.phase !== 'pre' || S.used) return false;
+    const c = S.hand[me][a.i]; if (!c || c === 'shield') return false;
+    if (TARGETED(c) && !validTargets(S, me).includes(a.sq)) return false;
+    S.hand[me].splice(a.i, 1); S.used = true;
+    S.events.push(E.played(nm[me], C[c][0] + ' ' + C[c][1]));
+    if (TARGETED(c)){ S.items[a.sq] = c; S.events.push(E.placed(C[c][0], a.sq)); }
+    else if (c === 'magnet'){ if (S.pos[op] - 1 > S.pos[me]) S.pos[me] = S.pos[op] - 1; else S.events.push(E.magnetFail); }
+    else if (c === 'boost') S.boost = true;
+    else if (c === 'remote'){ S.remote = true; S.phase = 'remote'; }
+    S.carry = S.events.slice();
+    return true;
+  }
+  if (a.t === 'R'){
+    if (S.phase !== 'pre') return false;
+    S.dice = [a.r[0] + 1, a.r[1] + 1]; S.draw = a.r[2]; S.phase = 'pick';
+    S.events.push(E.rolled(nm[me], S.dice[0], S.dice[1]));
+    S.carry = S.events.slice();
+    return true;
+  }
+  let k;
+  if (a.t === 'P'){ if (S.phase !== 'pick') return false; if (a.k === 2 && !S.boost) return false; k = a.k === 2 ? S.dice[0] + S.dice[1] : S.dice[a.k]; S.events.push(E.moved(nm[me], k)); }
+  else if (a.t === 'N'){ if (S.phase !== 'remote' || a.v < 1 || a.v > 6) return false; k = a.v; S.events.push(E.remote(nm[me], k)); }
+  else return false;
+  // move
+  const st = pathStop(S, me, k);
+  S.pos[me] = st.to;
+  if (st.passed != null){ delete S.items[st.passed]; bad(S, me); }          // shield used up to break through a roadblock
+  if (st.wall){ delete S.items[st.to]; S.events.push(E.walled(nm[me])); }
   let extra = false;
   if (S.pos[me] < END){
-    const sp = SPECIAL[S.pos[me]];
-    if (sp) S.events.push(T[LANG].sq[sp]);
-    if (sp === 'carrot') extra = true;
-    else if (sp === 'hole') S.pos[me] = Math.max(0, S.pos[me] - 3);
-    else if (sp === 'swap') [S.pos[me], S.pos[op]] = [S.pos[op], S.pos[me]];
-    else if (sp === 'gift'){ if (S.hand[me].length >= 3) S.events.push(E.handFull); else { const c = CARDS[r2]; S.hand[me].push(c); S.events.push(E.drew(C[c][0] + ' ' + C[c][1])); } }
-    else if (sp === 'trap') S.skip[me]++;
-    else if (sp === 'rocket') S.pos[me] = Math.min(END, S.pos[me] + 4);
+    if (S.items[S.pos[me]] === 'banana'){
+      delete S.items[S.pos[me]];
+      if (!bad(S, me)){ S.pos[me] = Math.max(0, S.pos[me] - 3); S.events.push(E.slipped(nm[me])); }
+    } else {
+      const sp = SPECIAL[S.pos[me]];
+      if (sp) S.events.push(T[LANG].sq[sp]);
+      if (sp === 'carrot') extra = true;
+      else if (sp === 'hole'){ if (!bad(S, me)) S.pos[me] = Math.max(0, S.pos[me] - 3); }
+      else if (sp === 'swap'){ if (S.pos[op] > S.pos[me] || !bad(S, me)) [S.pos[me], S.pos[op]] = [S.pos[op], S.pos[me]]; }
+      else if (sp === 'gift'){ if (S.hand[me].length >= 3) S.events.push(E.handFull); else { const c = DRAW[S.draw]; S.hand[me].push(c); S.events.push(E.drew(C[c][0] + ' ' + C[c][1])); } }
+      else if (sp === 'rocket'){ const r4 = pathStop(S, me, 4); S.pos[me] = r4.to; if (r4.passed != null){ delete S.items[r4.passed]; bad(S, me); } if (r4.wall){ delete S.items[r4.to]; S.events.push(E.walled(nm[me])); } }
+    }
   }
-  for (const p of [1, 2]) if (S.pos[p] >= END){ S.winner = p; S.events.push(T[LANG].won(N[p])); return S; }
-  S.boost = 0; S.lucky = false; S.used = false;
-  if (extra){ S.events.push(E.extra(N[me])); return S; }
-  let next = op;
-  for (let guard = 0; guard < 6 && S.skip[next] > 0; guard++){ S.skip[next]--; S.events.push(E.skipped(N[next])); next = other(next); }
-  S.turn = next;
-  return S;
+  for (const p of [1, 2]) if (S.pos[p] >= END){ S.winner = p; S.events.push(T[LANG].won(nm[p])); return true; }
+  S.boost = false; S.remote = false; S.used = false; S.dice = null; S.phase = 'pre';
+  if (extra) S.events.push(E.extra(nm[me])); else S.turn = op;
+  return true;
 }
+// preview landing squares for a pick option (for the blue circles)
+function preview(S, k){ const st = pathStop(S, S.turn, k); return st.to; }
 
 // ================= encoding =================
-const encA = a => a.t === 'C' ? 'C' + a.i : 'R' + a.r.join('');
+const encA = a => a.t === 'C' ? 'C' + a.i + String(a.sq || 0).padStart(2, '0') : a.t === 'R' ? 'R' + a.r.join('') : a.t === 'P' ? 'P' + a.k : 'N' + a.v;
 function decLog(s){
   const out = []; let k = 0;
   while (k < s.length){
-    if (s[k] === 'C' && /[0-2]/.test(s[k+1] || '')){ out.push({t:'C', i:+s[k+1]}); k += 2; }
-    else if (s[k] === 'R' && /^[0-5]{3}$/.test(s.substr(k+1, 3))){ out.push({t:'R', r:s.substr(k+1,3).split('').map(Number)}); k += 4; }
+    const c = s[k];
+    if (c === 'C' && /^[0-2]\d\d$/.test(s.substr(k+1, 3))){ out.push({t:'C', i:+s[k+1], sq:+s.substr(k+2, 2)}); k += 4; }
+    else if (c === 'R' && /^[0-5][0-5]\d$/.test(s.substr(k+1, 3))){ out.push({t:'R', r:s.substr(k+1, 3).split('').map(Number)}); k += 4; }
+    else if (c === 'P' && /[0-2]/.test(s[k+1] || '')){ out.push({t:'P', k:+s[k+1]}); k += 2; }
+    else if (c === 'N' && /[1-6]/.test(s[k+1] || '')){ out.push({t:'N', v:+s[k+1]}); k += 2; }
     else break;
   }
   return out;
 }
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-const rnd6 = () => crypto.getRandomValues(new Uint8Array(1))[0] % 6;   // tiny bias is irrelevant here
+const rndN = n => crypto.getRandomValues(new Uint8Array(1))[0] % n;
 const rndId = n => Array.from(crypto.getRandomValues(new Uint8Array(n)), x => 'abcdefghijklmnopqrstuvwxyz0123456789'[x % 36]).join('');
 
-let G = null, S = null, mySide = 0, shown = [0,0,0], animT = null;
-function names(){ return [null, esc(G.a), esc(G.b)]; }
-function replay(){ S = initState(G); for (const a of G.log) step(S, a, names()); }
+let G = null, S = null, mySide = 0, shown = [0,0,0], animT = null, armed = -1;
+function replay(){ nm = [null, esc(G.a), esc(G.b)]; S = initState(G); const ok = []; for (const a of G.log){ if (step(S, a)) ok.push(a); else break; } G.log = ok; }
 function link(forSide = 0){
-  const p = new URLSearchParams({id:G.id, a:G.a, b:G.b, f:G.first, h:G.h.join(''), l:G.log.map(encA).join(''), r:G.room});
+  const p = new URLSearchParams({id:G.id, a:G.a, b:G.b, f:G.first, h:G.h.join(''), l:G.log.map(encA).join(''), r:G.room, v:2});
   if (forSide) p.set('p', forSide);
   return location.origin + location.pathname + '#' + p.toString();
 }
 function readHash(){
   const p = new URLSearchParams(location.hash.slice(1));
   if (!p.get('id') || !/^[A-Za-z0-9_-]{8,64}$/.test(p.get('r') || '')) return null;
+  if (p.get('v') !== '2') return 'old';
   const h = (p.get('h') || '00').split('').map(Number).map(x => x >= 0 && x < 6 ? x : 0);
   return {id:p.get('id'), a:p.get('a') || 'P1', b:p.get('b') || 'P2', first:+p.get('f') === 2 ? 2 : 1, h:[h[0]||0, h[1]||0], log:decLog(p.get('l') || ''), room:p.get('r'), invited:+p.get('p') || 0};
 }
@@ -225,8 +271,7 @@ function readHash(){
 const RELAY = 'https://ntfy.sh/';
 let es = null, lastSeen = 0, pingTimer = null;
 function liveConnect(){
-  liveClose();
-  catchUp();
+  liveClose(); catchUp();
   es = new EventSource(RELAY + G.room + '/sse');
   es.onopen = () => { catchUp(); ping(); };
   es.onmessage = e => { try { const m = JSON.parse(e.data); if (m.event === 'message') onMsg(JSON.parse(m.message)); } catch {} };
@@ -244,93 +289,124 @@ function publish(obj, cache = true){
 }
 const ping = (reply = false) => mySide && publish({t:'ping', reply}, false).catch(() => {});
 function onMsg(m, quiet){
-  if (!m || m.id !== G.id) return;
-  if (m.t === 'ping' && m.by && m.by !== mySide){ lastSeen = Date.now(); renderPresence(); hideInvite(); if (!m.reply) ping(true); return; }
-  if (m.t === 'new' && m.by !== mySide && typeof m.hash === 'string' && !quiet){
+  if (!m || !G) return;
+  if (m.t === 'new' && m.id === G.id && m.by !== mySide && typeof m.hash === 'string' && !quiet){
     const np = new URLSearchParams(m.hash);
     if (np.get('r') === G.room){ localStorage.setItem(sideKey(np.get('id')), String(mySide)); location.hash = m.hash; }
     return;
   }
+  if (m.id !== G.id) return;
+  if (m.t === 'ping' && m.by && m.by !== mySide){ lastSeen = Date.now(); renderPresence(); hideInvite(); if (!m.reply) ping(true); return; }
   if (m.t === 'act' && m.n === G.log.length && typeof m.a === 'string'){
-    const a = decLog(m.a)[0]; if (!a) return;
-    if (m.by !== S.turn) return;                      // only the player whose turn it is may act
-    G.log.push(a);
+    const a = decLog(m.a)[0]; if (!a || m.by !== S.turn) return;
     if (m.by !== mySide){ lastSeen = Date.now(); if (!quiet) buzz(); }
-    advance(a);
+    apply(a);
   }
 }
-function advance(a){
-  const before = S.pos.slice();
-  step(S, a, names());
+function apply(a){
+  if (!step(S, a)) return;
+  G.log.push(a); armed = -1;
   history.replaceState(null, '', link());
-  if (a.t === 'R'){ spinDice(S.dice); }
-  animateTo(before);
-  render();
+  animateTo(); render();
 }
+let busy = false;
 async function act(a){
+  if (busy) return; busy = true;
   const n = G.log.length;
-  $('bRoll').disabled = true;
   try { const res = await publish({t:'act', n, a:encA(a)}); if (!res.ok) throw 0; }
-  catch { toast(LANG === 'zh' ? '连不上房间，检查一下网络再试' : "Couldn't reach the room, check your connection"); render(); return; }
-  if (G.log.length === n){ G.log.push(a); advance(a); }   // our own echo may already have applied it
+  catch { toast(LANG === 'zh' ? '连不上房间，检查一下网络再试' : "Couldn't reach the room, check your connection"); busy = false; render(); return; }
+  if (G.log.length === n) apply(a);   // our own echo may already have applied it
+  busy = false;
 }
 function buzz(){ try { navigator.vibrate && navigator.vibrate(60); } catch {} }
 
 // ================= UI =================
-function cellOf(i){ const row = Math.floor(i / 8), col = row % 2 === 0 ? i % 8 : 7 - (i % 8); return (4 - row) * 8 + col; }
+function cellOf(i){ const row = Math.floor(i / 8), col = row % 2 === 0 ? i % 8 : 7 - (i % 8); return (5 - row) * 8 + col; }
 function animateTo(){
   clearInterval(animT);
   animT = setInterval(() => {
     let moving = false;
-    for (const p of [1, 2]){ if (shown[p] !== S.pos[p]){ shown[p] += Math.sign(S.pos[p] - shown[p]); moving = true; } }
+    for (const p of [1, 2]) if (shown[p] !== S.pos[p]){ shown[p] += Math.sign(S.pos[p] - shown[p]); moving = true; }
     drawBoard();
     if (!moving) clearInterval(animT);
-  }, 110);
-}
-function spinDice(final){
-  const faces = ['⚀','⚁','⚂','⚃','⚄','⚅']; let k = 0; const el = $('dice');
-  el.classList.remove('shake'); void el.offsetWidth; el.classList.add('shake');
-  const iv = setInterval(() => { el.textContent = faces[k++ % 6]; if (k > 6){ clearInterval(iv); el.textContent = faces[final - 1] || '🎲'; } }, 60);
+  }, 100);
 }
 function drawBoard(){
-  const cells = Array(40).fill(null).map(() => ({html:''}));
+  const myTurn = !S.winner && S.turn === mySide;
+  const marks = {};
+  if (myTurn && S.phase === 'pick' && S.dice){
+    const opts = [[0, S.dice[0]], [1, S.dice[1]]]; if (S.boost) opts.push([2, S.dice[0] + S.dice[1]]);
+    for (const [k, v] of opts){ const to = preview(S, v); (marks[to] = marks[to] || []).push(k === 2 ? 'Σ' : DICE[v - 1]); }
+  }
+  const targets = myTurn && armed >= 0 ? validTargets(S, mySide) : [];
+  const cells = [];
   for (let i = 0; i <= END; i++){
     const sp = SPECIAL[i];
     const label = i === 0 ? '🏠' : i === END ? '🏁' : sp ? SQ_ICON[sp] : '';
-    cells[cellOf(i)].html = `<div class="sq ${i === 0 ? 'start' : i === END ? 'end' : ''}"><span class="num">${i || ''}</span><span class="sp">${label}</span>${shown[1] === i ? `<span class="tok t1">🐰</span>` : ''}${shown[2] === i ? `<span class="tok t2">🦊</span>` : ''}</div>`;
+    const cls = ['sq', i === 0 ? 'start' : i === END ? 'end' : '', Math.floor(i / 8) % 2 ? 'alt' : '', targets.includes(i) ? 'target' : ''].join(' ');
+    cells[cellOf(i)] = `<div class="${cls}" data-i="${i}"><span class="num">${i || ''}</span><span>${label}</span>${S.items[i] ? `<span class="item">${ITEM_ICON[S.items[i]]}</span>` : ''}${marks[i] ? `<span class="mark">${marks[i].join('')}</span>` : ''}${shown[1] === i ? '<span class="tok t1">🐰</span>' : ''}${shown[2] === i ? '<span class="tok t2">🦊</span>' : ''}</div>`;
   }
-  $('board').innerHTML = cells.map(c => c.html).join('');
+  $('board').innerHTML = cells.join('');
 }
+$('board').onclick = e => {
+  const sq = e.target.closest('.sq'); if (!sq || armed < 0) return;
+  const i = +sq.dataset.i;
+  if (validTargets(S, mySide).includes(i)) act({t:'C', i:armed, sq:i});
+};
 function renderPresence(){
   if (!G) return; const op = other(mySide), on = Date.now() - lastSeen < 50000;
   const el = $('pres' + op); if (el) el.innerHTML = `${on ? t('here') : t('away')} <span class="live ${on ? 'on' : ''}"></span>`;
 }
 function render(){
   applyLang();
-  const N = [null, G.a, G.b];
+  const N = [null, G.a, G.b], C = T[LANG].card;
   $('n1').textContent = N[1]; $('n2').textContent = N[2];
   for (const p of [1, 2]){
     const bits = [];
     if (p === mySide) bits.push(t('you'));
     bits.push(t('cards')(S.hand[p].length));
-    if (S.skip[p]) bits.push('😵 ' + t('skip'));
+    if (S.hand[p].includes('shield')) bits.push(t('shielded'));
     $('s' + p).innerHTML = bits.join(' · ') + (p !== mySide ? ` · <span id="pres${p}"></span>` : '');
     $('pl' + p).classList.toggle('turn', !S.winner && S.turn === p);
   }
-  renderPresence();
-  drawBoard();
+  renderPresence(); drawBoard();
   const myTurn = !S.winner && S.turn === mySide;
-  $('log').innerHTML = S.events.length ? S.events.join('<br>') : (myTurn ? t('youTurn') : t('waitingFor')(esc(N[S.turn])));
-  if (S.winner) $('log').innerHTML = `<span class="win">${t('won')(esc(N[S.winner]))}</span><br>` + S.events.slice(0, -1).join('<br>');
+  $('log').innerHTML = S.winner ? `<span class="win">${t('won')(esc(N[S.winner]))}</span><br>` + S.events.slice(0, -1).join('<br>')
+                     : S.events.length ? S.events.join('<br>') : (myTurn ? t('youTurn') : t('waitingFor')(esc(N[S.turn])));
+  // hint
+  let hint = '';
+  if (myTurn && armed >= 0) hint = t('placeHint')(C[S.hand[mySide][armed]][0]);
+  else if (myTurn && S.phase === 'pick') hint = t('pickHint');
+  else if (myTurn && S.phase === 'remote') hint = t('remoteHint');
+  $('hint').textContent = hint;
   // hand
-  const C = T[LANG].card;
-  $('hand').innerHTML = S.hand[mySide].map((c, i) => `<button class="cardb ${c === 'shield' ? 'passive' : ''}" data-i="${i}" ${!myTurn || S.used || c === 'shield' ? 'disabled' : ''}><span class="e">${C[c][0]}</span><b>${C[c][1]}</b><br><span class="muted">${C[c][2]}</span></button>`).join('') || `<span class="muted">${LANG === 'zh' ? '没有手牌，踩到 🎁 可以抽' : 'No cards. Land on 🎁 to draw'}</span>`;
-  document.querySelectorAll('.cardb').forEach(b => b.onclick = () => act({t:'C', i:+b.dataset.i}));
-  $('bRoll').disabled = !myTurn;
+  const canCard = myTurn && S.phase === 'pre' && !S.used;
+  $('hand').innerHTML = S.hand[mySide].map((c, i) => `<button class="cardb ${c === 'shield' ? 'passive' : ''} ${armed === i ? 'armed' : ''}" data-i="${i}" ${!canCard || c === 'shield' ? 'disabled' : ''}><span class="e">${C[c][0]}</span><b>${C[c][1]}</b><br><span class="muted">${C[c][2]}</span></button>`).join('') || `<span class="muted">${t('noCards')}</span>`;
+  document.querySelectorAll('.cardb').forEach(b => b.onclick = () => {
+    const i = +b.dataset.i, c = S.hand[mySide][i];
+    if (TARGETED(c)){
+      if (!validTargets(S, mySide).length){ toast(LANG === 'zh' ? '对方前面没有地方放了' : 'No room ahead of them'); return; }
+      armed = armed === i ? -1 : i; render(); return;
+    }
+    armed = -1; act({t:'C', i, sq:0});
+  });
+  // picks / roll
+  const picks = $('picks');
+  if (myTurn && S.phase === 'pick'){
+    const opts = [[0, S.dice[0]], [1, S.dice[1]]]; if (S.boost) opts.push([2, S.dice[0] + S.dice[1]]);
+    picks.innerHTML = opts.map(([k, v]) => `<button data-k="${k}"><span class="d">${k === 2 ? '💨' : DICE[v - 1]}</span>${k === 2 ? t('pickSum') + ' ' : ''}${t('steps')(v)}<small>→ ${preview(S, v)}</small></button>`).join('');
+    picks.querySelectorAll('button').forEach(b => b.onclick = () => act({t:'P', k:+b.dataset.k}));
+  } else if (myTurn && S.phase === 'remote'){
+    picks.innerHTML = [1,2,3,4,5,6].map(v => `<button data-v="${v}"><span class="d">${DICE[v - 1]}</span><small>→ ${preview(S, v)}</small></button>`).join('');
+    picks.querySelectorAll('button').forEach(b => b.onclick = () => act({t:'N', v:+b.dataset.v}));
+  }
+  picks.classList.toggle('hidden', !(myTurn && (S.phase === 'pick' || S.phase === 'remote')));
+  $('rollrow').classList.toggle('hidden', myTurn && S.phase !== 'pre');
+  $('bRoll').disabled = !myTurn || S.phase !== 'pre' || armed >= 0;
   $('bRoll').textContent = myTurn ? t('roll') : (S.winner ? '🏁' : t('notYour')(N[S.turn]));
   $('endRow').classList.toggle('hidden', !S.winner);
+  if (S.winner) $('rollrow').classList.add('hidden');
 }
-
 function applyLang(){
   document.documentElement.lang = LANG === 'zh' ? 'zh' : 'en';
   $('hTitle').textContent = t('title'); $('bLang').textContent = t('lang'); $('bRules').textContent = t('rules'); $('bNew').textContent = t('newG');
@@ -341,7 +417,6 @@ function applyLang(){
 function show(id){ ['setup','game','rules'].forEach(v => $(v).classList.toggle('hidden', v !== id)); }
 function toast(s){ const el = $('toast'); el.textContent = s; el.classList.add('on'); clearTimeout(toast.h); toast.h = setTimeout(() => el.classList.remove('on'), 2400); }
 
-// invite + share (URL only; iPhone needs a real tap for the share sheet)
 function showInvite(){
   const url = link(other(mySide));
   $('invUrl').value = url; $('invite').classList.remove('hidden');
@@ -358,8 +433,8 @@ async function copyLink(url){
 
 const sideKey = id => 'race-side-' + id;
 function startGame(a, b, first, side = 1, room = null){
-  G = {id:rndId(8), a, b, first, h:[rnd6(), rnd6()], log:[], room:room || 'race-' + rndId(20)};
-  mySide = side; localStorage.setItem(sideKey(G.id), String(side));
+  G = {id:rndId(8), a, b, first, h:[rndN(6), rndN(6)], log:[], room:room || 'race-' + rndId(20)};
+  mySide = side; localStorage.setItem(sideKey(G.id), String(side)); armed = -1;
   replay(); shown = S.pos.slice();
   history.replaceState(null, '', link());
   show('game'); render(); liveConnect();
@@ -368,13 +443,14 @@ function startGame(a, b, first, side = 1, room = null){
 function load(){
   hideInvite();
   const g = readHash();
+  if (g === 'old'){ toast(LANG === 'zh' ? '这是旧版本的游戏，开一局新的吧' : 'That link is from the old version, start a new game'); openSetup(); return; }
   if (!g){ openSetup(); return; }
-  G = g;
+  G = g; armed = -1;
   mySide = +(localStorage.getItem(sideKey(G.id)) || 0);
   if (!mySide){ mySide = g.invited === 1 || g.invited === 2 ? g.invited : 2; localStorage.setItem(sideKey(G.id), String(mySide)); }
   replay(); shown = S.pos.slice();
   history.replaceState(null, '', link());
-  show(localStorage.getItem('race-seen-rules') ? 'game' : 'rules');
+  show(localStorage.getItem('race-seen-rules-v2') ? 'game' : 'rules');
   render(); liveConnect();
   if (!G.log.length && mySide === 1) showInvite();
 }
@@ -387,8 +463,7 @@ $('bStart').onclick = () => {
   const a = $('nA').value.trim() || (LANG === 'zh' ? '小兔' : 'Bunny'), b = $('nB').value.trim() || (LANG === 'zh' ? '小狐' : 'Fox');
   localStorage.setItem('race-names', JSON.stringify([a, b])); startGame(a, b, firstMe ? 1 : 2);
 };
-$('bRoll').onclick = () => act({t:'R', r:[rnd6(), rnd6(), rnd6()]});
-// rematch: same room, new game id; the other phone follows automatically
+$('bRoll').onclick = () => act({t:'R', r:[rndN(6), rndN(6), rndN(10)]});
 $('bRematch').onclick = async () => {
   const oldId = G.id, loserFirst = other(S.winner);
   startGame(G.a, G.b, loserFirst, mySide, G.room);
@@ -397,8 +472,8 @@ $('bRematch').onclick = async () => {
 };
 $('bNew').onclick = () => { liveClose(); openSetup(); };
 $('bRules').onclick = () => { applyLang(); show('rules'); };
-$('bRulesOk').onclick = () => { localStorage.setItem('race-seen-rules', '1'); if (G){ show('game'); render(); } else openSetup(); };
-$('bLang').onclick = () => { LANG = LANG === 'zh' ? 'en' : 'zh'; localStorage.setItem('race-lang', LANG); if (G){ replay(); } applyLang(); if (G && !$('game').classList.contains('hidden')) render(); };
+$('bRulesOk').onclick = () => { localStorage.setItem('race-seen-rules-v2', '1'); if (G){ show('game'); render(); } else openSetup(); };
+$('bLang').onclick = () => { LANG = LANG === 'zh' ? 'en' : 'zh'; localStorage.setItem('race-lang', LANG); if (G) replay(); applyLang(); if (G && !$('game').classList.contains('hidden')) render(); };
 window.addEventListener('hashchange', load);
 applyLang();
 load();
